@@ -1,0 +1,14 @@
+# Discord Bot
+discord.py==2.3.2
+
+# Spotify Integration
+spotipy==2.23.0
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Database
+# sqlite3 is built into Python
+
+# Logging
+# logging is built into Python

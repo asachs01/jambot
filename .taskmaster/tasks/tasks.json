@@ -1,0 +1,149 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Project Setup and Environment Configuration",
+        "description": "Initialize the Python project, set up Docker, configure environment variables, and prepare for Discord and Spotify integration.",
+        "details": "Use Python 3.11+. Create a Dockerfile that installs dependencies (discord.py v2.x, spotipy v2.23+, sqlite3, python-dotenv). Prepare a .env.example file with all required variables. Ensure persistent volume for SQLite. Configure DigitalOcean Container App deployment with resource limits (512MB RAM, 0.5 vCPU, 1GB volume). Use python-dotenv to load environment variables securely. Set file permissions for the SQLite database to restrict access to the bot process only.",
+        "testStrategy": "Verify container builds and runs locally. Check that environment variables are loaded and accessible. Confirm database file permissions are correct. Deploy to DigitalOcean and ensure bot starts and persists database after restart.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Discord Bot Initialization and Message Monitoring",
+        "description": "Implement Discord bot startup, connect to server, and monitor messages from the configured jam leader for setlist detection.",
+        "details": "Use discord.py v2.x with required intents (Message Content, Server Members). Authenticate using DISCORD_BOT_TOKEN from .env. Monitor messages in specified channels from DISCORD_JAM_LEADER_ID. Implement async/await for all Discord operations. Log all bot startup and message events using Python's logging module with rotating file handler.",
+        "testStrategy": "Post test messages as jam leader and verify bot detects them. Confirm bot logs all events and errors. Simulate Discord API errors and check error handling and logging.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Setlist Message Parsing and Extraction",
+        "description": "Parse detected setlist messages, extract jam date, time, and song list, allowing for minor intro text variations.",
+        "details": "Use regular expressions to match setlist patterns, extracting date, time, and numbered song titles (strip key info). Implement robust parsing to handle minor variations in intro text. Validate extracted data and log warnings for unrecognized formats. Store parsed setlist in memory for further processing.",
+        "testStrategy": "Test with multiple setlist message formats. Validate extraction accuracy against acceptance criteria. Log and skip unrecognized formats.",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "SQLite Database Schema Design and Implementation",
+        "description": "Design and implement the SQLite database schema for songs, setlists, and setlist-song relationships.",
+        "details": "Create tables: songs, setlists, setlist_songs as specified. Use sqlite3 with connection pooling for reliability. Ensure atomic transactions for all write operations. Implement schema migrations using Alembic or a simple versioning script. Set up indices on song_title and setlist date for fast lookups. Use parameterized queries to prevent SQL injection.",
+        "testStrategy": "Run schema creation and migration scripts. Validate table structure and constraints. Test atomicity by simulating concurrent writes. Verify indices improve query performance.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Song Matching: Database Lookup and Spotify Search",
+        "description": "For each song, check for previously approved versions in the database, otherwise search Spotify for matches.",
+        "details": "For each song, query the songs table for existing version. If not found, use spotipy v2.23+ to search Spotify with exact title. If no match, try common bluegrass variations (maintain a mapping or use a configurable list). Limit fuzzy matching to avoid irrelevant results. Return up to 3 matches per new song, capturing track name, artist, album, Spotify track ID, and URL. Handle Spotify API rate limits with exponential backoff and retries.",
+        "testStrategy": "Test with songs present and absent in the database. Validate Spotify search results for accuracy and relevance. Simulate rate limits and verify retry logic.",
+        "priority": "high",
+        "dependencies": [
+          3,
+          4
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Admin Validation Workflow via Discord DM",
+        "description": "Send a DM to the admin with song match details, support emoji-based approval, manual overrides, and summary confirmation.",
+        "details": "Use discord.py to send formatted DMs to DISCORD_ADMIN_ID. For each song, display: pre-approved version (✅), single match (✅), multiple matches (1️⃣ 2️⃣ 3️⃣), or no match (❌, prompt for link). Listen for emoji reactions and message replies. Allow admin to override with Spotify link. After all songs, present summary and request final approval. Implement async/await for all Discord operations. Log all admin actions for audit.",
+        "testStrategy": "Simulate setlist detection and verify DM formatting. Test all approval scenarios (emoji, manual link, skip). Confirm summary and final approval flow. Validate logging of admin actions.",
+        "priority": "high",
+        "dependencies": [
+          5
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Manual Song Management Command Implementation",
+        "description": "Implement the '@jambot use this version of [song name] for [setlist date] [spotify link]' command for manual overrides.",
+        "details": "Parse command using discord.py command framework. Validate Spotify link format using regex. Update song version in setlist (if before playlist creation) and in songs table for future use. Confirm update to admin via DM. Log all manual overrides for audit. Ensure command is only accessible to admin.",
+        "testStrategy": "Test command with valid and invalid Spotify links. Verify updates in database and setlist. Confirm admin receives confirmation. Check access control.",
+        "priority": "medium",
+        "dependencies": [
+          4,
+          6
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Spotify Playlist Creation and Posting",
+        "description": "Create Spotify playlist under configured account, add approved tracks in order, and post link to Discord channel.",
+        "details": "Use spotipy with OAuth refresh token for authentication. Create playlist named 'Bluegrass Jam [MM/DD/YYYY]'. Add tracks in setlist order. Handle API errors gracefully, retry if needed, and notify admin if failure persists. Post playlist link to original Discord channel using discord.py. Store playlist info in setlists table. Ensure playlist-modify-public/private scopes are set.",
+        "testStrategy": "Approve setlist and trigger playlist creation. Validate playlist name, track order, and link posting. Simulate Spotify API errors and verify error handling and admin notification.",
+        "priority": "high",
+        "dependencies": [
+          6
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Song Version Memory and Setlist History Management",
+        "description": "Update song usage dates, maintain setlist-song relationships, and ensure version consistency across sessions.",
+        "details": "On playlist creation, update last_used date for each song in songs table. Insert setlist and setlist_songs records to maintain history. Ensure first_used is set for new songs. Implement queries to retrieve version consistency stats. Use indices for efficient lookups. Log all updates for audit.",
+        "testStrategy": "Create multiple setlists with repeat songs. Verify last_used and first_used dates update correctly. Check setlist-song relationships in database. Validate version consistency rate.",
+        "priority": "medium",
+        "dependencies": [
+          8
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Comprehensive Error Handling, Logging, and Documentation",
+        "description": "Implement robust error handling, logging, and provide complete setup and admin documentation.",
+        "details": "Use Python logging with INFO/ERROR levels, rotating file handler, and stdout. Log timestamp, level, module, message. Handle all error scenarios (Discord/Spotify API, database, playlist creation) with retries and admin notifications. Document setup (README), .env.example, database schema, deployment guide, admin workflow, and troubleshooting. Ensure code is well-commented and uses async/await throughout.",
+        "testStrategy": "Simulate all error scenarios and verify logging and notifications. Review documentation for completeness and clarity. Check code comments and async usage.",
+        "priority": "medium",
+        "dependencies": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-11-14T14:47:22.671Z",
+      "updated": "2025-11-14T14:47:22.671Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

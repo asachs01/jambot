@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  jambot:
+    build: .
+    container_name: jambot
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    # Resource limits for DigitalOcean Container App
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
