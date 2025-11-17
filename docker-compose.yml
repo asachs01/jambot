@@ -1,11 +1,11 @@
-version: '3.8'
-
 services:
   jambot:
     build: .
     container_name: jambot
     env_file:
       - .env
+    ports:
+      - "8080:8080"  # Web interface for Spotify setup
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

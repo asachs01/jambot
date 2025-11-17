@@ -12,3 +12,7 @@ python-dotenv==1.0.0
 
 # Logging
 # logging is built into Python
+
+# Web Server for Setup
+Flask==3.0.0
+gunicorn==21.2.0

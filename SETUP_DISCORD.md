@@ -80,24 +80,63 @@ Copy the **"Generated URL"** at the bottom of the page.
 
 Your bot should now appear in your server's member list (offline until you run it).
 
+### Channel Access
+
+The bot automatically has access to all channels where it has the **Read Messages/View Channels** permission. You don't need to "add" it to specific channels like you would with a regular user.
+
+**To verify the bot can access a channel**:
+1. Go to the channel where setlists will be posted
+2. Click the channel settings (gear icon)
+3. Go to **Permissions**
+4. Look for your bot in the members/roles list
+5. Ensure it has **View Channel** enabled
+
+**To restrict bot access** (optional):
+1. Go to a channel's settings
+2. Click **Permissions**
+3. Add your bot to the permissions list
+4. Disable **View Channel** to prevent access to that channel
+
 ## Step 7: Get User IDs
 
 You need to get the Discord User IDs for:
 - The jam leader (who posts setlists)
 - The admin (who approves song selections)
 
-### Enable Developer Mode
+### Method 1: Enable Developer Mode (Recommended)
 
-1. Open Discord
-2. Click the **gear icon** (User Settings) at the bottom left
-3. Go to **"Advanced"** in the left sidebar under "App Settings"
-4. Enable **"Developer Mode"**
+1. **Enable Developer Mode**:
+   - Open Discord (desktop or web)
+   - Click the **gear icon** (User Settings) at the bottom left
+   - Go to **App Settings → Advanced** in the left sidebar
+   - Toggle on **"Developer Mode"**
 
-### Copy User IDs
+2. **Get the Jam Leader's User ID**:
+   - Right-click on the jam leader's username or avatar (in chat or member list)
+   - Click **"Copy User ID"**
+   - The ID will look like: `123456789012345678`
 
-1. Right-click on the jam leader's username or avatar
-2. Click **"Copy User ID"** (it will look like `123456789012345678`)
-3. Repeat for the admin user
+3. **Get Your Own User ID (Admin)**:
+   - Click on your profile picture in the bottom left
+   - Click the three dots (**...**) menu
+   - Click **"Copy User ID"**
+   - Or right-click your own username in any chat and select **"Copy User ID"**
+
+### Method 2: Without Developer Mode
+
+If you prefer not to enable Developer Mode:
+
+1. In any Discord channel, type: `\@username` (backslash before the @)
+2. Send the message
+3. Discord will display: `<@123456789012345678>`
+4. The numbers between `<@` and `>` are the user ID
+
+### What These IDs Are Used For
+
+- **JAM_LEADER_ID**: The bot only monitors messages from this specific user for setlists
+- **ADMIN_ID**: The bot sends approval workflow DMs to this user only
+
+💡 **Tip**: These are 17-18 digit numbers unique to each Discord user. They never change, even if the user changes their username or display name.
 
 ## Step 8: Add Credentials to .env
 
@@ -153,7 +192,7 @@ Once configured, test that:
 
 ## Next Steps
 
-- [Set up Spotify API credentials](SETUP_SPOTIFY.md)
+- [Set up Spotify API credentials](SPOTIFY_SETUP.md)
 - [Configure and run the bot](README.md#quick-start)
 - [Learn about the admin workflow](ADMIN_GUIDE.md)
 

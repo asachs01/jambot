@@ -21,14 +21,96 @@ class SpotifyClient:
         "foggy mountain breakdown": [],
     }
 
-    def __init__(self):
-        """Initialize Spotify client with OAuth."""
-        self.sp = self._authenticate()
-        self.user_id = self._get_user_id()
-        logger.info(f"Spotify client initialized for user: {self.user_id}")
+    def __init__(self, db=None):
+        """Initialize Spotify client with OAuth.
+
+        Args:
+            db: Database instance for token storage (optional).
+        """
+        logger.info("Initializing Spotify client...")
+        self.db = db
+        try:
+            self.sp = self._authenticate()
+            logger.info("Spotify authentication complete, getting user ID...")
+            self.user_id = self._get_user_id()
+            logger.info(f"Spotify client initialized for user: {self.user_id}")
+        except Exception as e:
+            logger.error(f"Failed to initialize Spotify client: {e}")
+            logger.warning("Spotify features will be disabled - bot will still detect setlists")
+            logger.warning("To fix Spotify authentication, run: python scripts/setup_spotify_auth.py")
+            self.sp = None
+            self.user_id = None
+
+    def _get_tokens_from_db(self) -> dict:
+        """Get stored Spotify tokens from database.
+
+        Returns:
+            Dictionary with access_token, refresh_token, and expires_at.
+
+        Raises:
+            ValueError: If no tokens found in database.
+        """
+        if not self.db:
+            from src.database import Database
+            self.db = Database()
+
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT access_token, refresh_token, expires_at
+                FROM spotify_tokens
+                WHERE id = 1
+            """)
+
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(
+                    "No Spotify tokens found in database. "
+                    "Run: python scripts/setup_spotify_auth.py"
+                )
+
+            return {
+                'access_token': row[0],
+                'refresh_token': row[1],
+                'expires_at': row[2],
+            }
+
+    def _save_tokens_to_db(self, access_token: str, refresh_token: str, expires_at: int):
+        """Save tokens to database.
+
+        Args:
+            access_token: Spotify access token.
+            refresh_token: Spotify refresh token.
+            expires_at: Unix timestamp when token expires.
+        """
+        if not self.db:
+            from src.database import Database
+            self.db = Database()
+
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Create table if it doesn't exist
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS spotify_tokens (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    access_token TEXT NOT NULL,
+                    refresh_token TEXT NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+                )
+            """)
+
+            # Insert or update
+            cursor.execute("""
+                INSERT OR REPLACE INTO spotify_tokens
+                (id, access_token, refresh_token, expires_at, updated_at)
+                VALUES (1, ?, ?, ?, strftime('%s', 'now'))
+            """, (access_token, refresh_token, expires_at))
 
     def _authenticate(self) -> spotipy.Spotify:
-        """Authenticate with Spotify using refresh token.
+        """Authenticate with Spotify using database tokens.
 
         Returns:
             Authenticated Spotify client.
@@ -37,31 +119,68 @@ class SpotifyClient:
             ValueError: If authentication fails.
         """
         try:
+            # Try to get tokens from database
+            logger.info("Loading Spotify tokens from database...")
+            tokens = self._get_tokens_from_db()
+
+            # Create auth manager
             auth_manager = SpotifyOAuth(
                 client_id=Config.SPOTIFY_CLIENT_ID,
                 client_secret=Config.SPOTIFY_CLIENT_SECRET,
                 redirect_uri=Config.SPOTIFY_REDIRECT_URI,
-                scope="playlist-modify-public playlist-modify-private",
+                scope="playlist-modify-public playlist-modify-private user-read-private",
+                requests_timeout=10,
             )
 
-            # Set the refresh token
+            # Set token info
+            import time
             token_info = {
-                'refresh_token': Config.SPOTIFY_REFRESH_TOKEN,
-                'access_token': None,
-                'expires_at': 0,
+                'access_token': tokens['access_token'],
+                'refresh_token': tokens['refresh_token'],
+                'expires_at': tokens['expires_at'],
+                'scope': 'playlist-modify-public playlist-modify-private user-read-private',
+                'token_type': 'Bearer',
             }
+
             auth_manager.token_info = token_info
 
-            # Force token refresh
-            token_info = auth_manager.get_access_token(as_dict=True)
+            # Check if token needs refresh
+            if time.time() > tokens['expires_at'] - 60:  # Refresh if expiring within 1 minute
+                logger.info("Access token expired, refreshing...")
+                try:
+                    token_info = auth_manager.refresh_access_token(tokens['refresh_token'])
+                    logger.info("Successfully refreshed access token")
 
-            sp = spotipy.Spotify(auth_manager=auth_manager)
+                    # Save new tokens
+                    self._save_tokens_to_db(
+                        token_info['access_token'],
+                        token_info.get('refresh_token', tokens['refresh_token']),  # May not return new refresh token
+                        token_info['expires_at']
+                    )
+                except Exception as refresh_error:
+                    logger.error(f"Token refresh failed: {refresh_error}")
+                    raise ValueError(
+                        f"Failed to refresh Spotify token: {refresh_error}. "
+                        "Your refresh token may have expired. "
+                        "Run: python scripts/setup_spotify_auth.py"
+                    )
+            else:
+                logger.info("Using cached access token")
+
+            # Create Spotify client
+            sp = spotipy.Spotify(auth_manager=auth_manager, requests_timeout=10)
             logger.info("Spotify authentication successful")
             return sp
 
+        except ValueError:
+            # Re-raise ValueError as-is (already has good message)
+            raise
         except Exception as e:
             logger.error(f"Spotify authentication failed: {e}")
-            raise ValueError(f"Failed to authenticate with Spotify: {e}")
+            raise ValueError(
+                f"Failed to authenticate with Spotify: {e}. "
+                "Run: python scripts/setup_spotify_auth.py"
+            )
 
     def _get_user_id(self) -> str:
         """Get the authenticated user's Spotify ID.
@@ -70,10 +189,22 @@ class SpotifyClient:
             Spotify user ID.
         """
         try:
-            user_info = self.sp.current_user()
-            return user_info['id']
+            logger.info("Getting user ID via direct API call...")
+            # Use direct HTTP request instead of spotipy to avoid timeout issues
+            import requests
+            tokens = self._get_tokens_from_db()
+            response = requests.get(
+                'https://api.spotify.com/v1/me',
+                headers={'Authorization': f'Bearer {tokens["access_token"]}'},
+                timeout=10
+            )
+            response.raise_for_status()
+            user_info = response.json()
+            user_id = user_info['id']
+            logger.info(f"Successfully retrieved user ID: {user_id}")
+            return user_id
         except Exception as e:
-            logger.error(f"Failed to get Spotify user ID: {e}")
+            logger.error(f"Failed to get Spotify user ID: {e}", exc_info=True)
             raise
 
     def _retry_api_call(self, func, *args, max_retries=3, **kwargs):
@@ -93,8 +224,12 @@ class SpotifyClient:
         """
         for attempt in range(max_retries):
             try:
-                return func(*args, **kwargs)
+                logger.debug(f"Attempting API call: {func.__name__} (attempt {attempt + 1}/{max_retries})")
+                result = func(*args, **kwargs)
+                logger.debug(f"API call successful: {func.__name__}")
+                return result
             except spotipy.exceptions.SpotifyException as e:
+                logger.error(f"Spotify API error: {e.http_status} - {e.msg}")
                 if e.http_status == 429:  # Rate limited
                     retry_after = int(e.headers.get('Retry-After', 1))
                     logger.warning(f"Rate limited. Retrying after {retry_after}s (attempt {attempt + 1}/{max_retries})")
@@ -104,8 +239,10 @@ class SpotifyClient:
                     logger.warning(f"Spotify server error. Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
+                    logger.error(f"Unrecoverable Spotify error: {e}")
                     raise
             except Exception as e:
+                logger.error(f"Unexpected error in API call: {type(e).__name__}: {e}")
                 if attempt == max_retries - 1:
                     raise
                 wait_time = 2 ** attempt
@@ -114,7 +251,35 @@ class SpotifyClient:
 
         raise Exception(f"Failed after {max_retries} attempts")
 
-    def search_song(self, song_title: str, limit: int = 3) -> List[Dict[str, Any]]:
+    def _direct_search(self, query: str, limit: int = 3) -> Dict[str, Any]:
+        """Perform direct HTTP search request to Spotify API.
+
+        Args:
+            query: The search query string.
+            limit: Maximum number of results.
+
+        Returns:
+            Search results dictionary from Spotify API.
+        """
+        import requests
+        tokens = self._get_tokens_from_db()
+
+        params = {
+            'q': query,
+            'type': 'track',
+            'limit': limit
+        }
+
+        response = requests.get(
+            'https://api.spotify.com/v1/search',
+            headers={'Authorization': f'Bearer {tokens["access_token"]}'},
+            params=params,
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def search_song(self, song_title: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search Spotify for a song by title.
 
         Args:
@@ -124,14 +289,15 @@ class SpotifyClient:
         Returns:
             List of track dictionaries with relevant information.
         """
+        logger.info(f"Starting Spotify search for: {song_title}")
         try:
             # Try exact search first
-            results = self._retry_api_call(
-                self.sp.search,
-                q=f'track:"{song_title}" genre:bluegrass',
-                type='track',
+            logger.info(f"Attempting exact search for: {song_title}")
+            results = self._direct_search(
+                query=f'track:"{song_title}"',
                 limit=limit
             )
+            logger.info(f"Exact search completed for: {song_title}")
 
             tracks = []
             if results['tracks']['items']:
@@ -140,10 +306,9 @@ class SpotifyClient:
                 return tracks
 
             # Try without quotes if exact search fails
-            results = self._retry_api_call(
-                self.sp.search,
-                q=f'track:{song_title} genre:bluegrass',
-                type='track',
+            logger.info(f"Trying search without quotes for: {song_title}")
+            results = self._direct_search(
+                query=f'track:{song_title}',
                 limit=limit
             )
 
@@ -157,10 +322,9 @@ class SpotifyClient:
             for key, variations in self.SONG_VARIATIONS.items():
                 if key in song_lower:
                     for variation in variations:
-                        results = self._retry_api_call(
-                            self.sp.search,
-                            q=f'track:"{variation}" genre:bluegrass',
-                            type='track',
+                        logger.info(f"Trying variation: {variation}")
+                        results = self._direct_search(
+                            query=f'track:"{variation}"',
                             limit=limit
                         )
                         if results['tracks']['items']:
@@ -283,3 +447,91 @@ class SpotifyClient:
         except Exception as e:
             logger.error(f"Failed to add tracks to playlist {playlist_id}: {e}")
             raise
+
+    def get_auth_url(self) -> str:
+        """Get Spotify authorization URL for web-based OAuth flow.
+
+        Returns:
+            Authorization URL to redirect user to.
+        """
+        auth_manager = SpotifyOAuth(
+            client_id=Config.SPOTIFY_CLIENT_ID,
+            client_secret=Config.SPOTIFY_CLIENT_SECRET,
+            redirect_uri=Config.SPOTIFY_REDIRECT_URI,
+            scope="playlist-modify-public playlist-modify-private user-read-private",
+            requests_timeout=10,
+        )
+        return auth_manager.get_authorize_url()
+
+    def authenticate_with_code(self, code: str):
+        """Complete OAuth flow by exchanging authorization code for tokens.
+
+        Args:
+            code: Authorization code from Spotify callback.
+
+        Raises:
+            Exception: If token exchange fails.
+        """
+        try:
+            auth_manager = SpotifyOAuth(
+                client_id=Config.SPOTIFY_CLIENT_ID,
+                client_secret=Config.SPOTIFY_CLIENT_SECRET,
+                redirect_uri=Config.SPOTIFY_REDIRECT_URI,
+                scope="playlist-modify-public playlist-modify-private user-read-private",
+                requests_timeout=10,
+            )
+
+            # Exchange code for tokens
+            token_info = auth_manager.get_access_token(code, as_dict=True, check_cache=False)
+
+            # Save tokens to database
+            self._save_tokens_to_db(
+                token_info['access_token'],
+                token_info['refresh_token'],
+                token_info['expires_at']
+            )
+
+            logger.info("Spotify tokens saved to database successfully")
+
+            # Re-initialize the client with new tokens
+            self.sp = self._authenticate()
+            self.user_id = self._get_user_id()
+
+        except Exception as e:
+            logger.error(f"Failed to exchange code for tokens: {e}", exc_info=True)
+            raise
+
+    def is_authenticated(self) -> bool:
+        """Check if Spotify client is authenticated.
+
+        Returns:
+            True if authenticated and tokens are valid, False otherwise.
+        """
+        try:
+            # Try to get tokens from database
+            tokens = self._get_tokens_from_db()
+
+            # Check if access token is still valid
+            import time
+            if time.time() < tokens['expires_at'] - 60:
+                return True
+
+            # Try to refresh if expired
+            auth_manager = SpotifyOAuth(
+                client_id=Config.SPOTIFY_CLIENT_ID,
+                client_secret=Config.SPOTIFY_CLIENT_SECRET,
+                redirect_uri=Config.SPOTIFY_REDIRECT_URI,
+                scope="playlist-modify-public playlist-modify-private user-read-private",
+                requests_timeout=10,
+            )
+
+            token_info = auth_manager.refresh_access_token(tokens['refresh_token'])
+            self._save_tokens_to_db(
+                token_info['access_token'],
+                token_info.get('refresh_token', tokens['refresh_token']),
+                token_info['expires_at']
+            )
+            return True
+
+        except Exception:
+            return False

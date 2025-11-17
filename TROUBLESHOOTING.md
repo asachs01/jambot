@@ -4,6 +4,7 @@ This guide covers common issues with Jambot and their solutions.
 
 ## Table of Contents
 
+- [🔍 Quick Diagnosis: Bot Not Detecting Messages](#-quick-diagnosis-bot-not-detecting-messages)
 - [Bot Status Issues](#bot-status-issues)
 - [Discord Integration](#discord-integration)
 - [Spotify Integration](#spotify-integration)
@@ -11,6 +12,116 @@ This guide covers common issues with Jambot and their solutions.
 - [Deployment Issues](#deployment-issues)
 - [Performance Issues](#performance-issues)
 - [Common Error Messages](#common-error-messages)
+
+---
+
+## 🔍 Quick Diagnosis: Bot Not Detecting Messages
+
+If your bot is **online** but **not responding** to messages, work through these steps in order:
+
+### Step 1: Verify Message Content Intent (MOST COMMON ISSUE)
+
+**This is the #1 reason bots don't detect messages.**
+
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Select your Jambot application
+3. Click **"Bot"** in the left sidebar
+4. Scroll down to **"Privileged Gateway Intents"**
+5. Ensure **"Message Content Intent"** is toggled **ON** (should be blue)
+6. If you made a change, click **"Save Changes"**
+7. **Restart your bot**:
+   ```bash
+   docker compose down
+   docker compose up -d
+   ```
+
+**Important**: Even though the intent is enabled in the code (`intents.message_content = True`), it MUST also be enabled in the Developer Portal.
+
+### Step 2: Verify Your User ID
+
+The bot is configured to only respond to specific jam leader user IDs.
+
+**To check your actual user ID**:
+1. Enable Developer Mode in Discord: Settings → Advanced → Developer Mode ON
+2. Right-click your username anywhere
+3. Click "Copy User ID"
+4. Note your user ID (it will be a long number like `123456789012345678`)
+
+**If the bot isn't responding**:
+- You may not be configured as a jam leader
+- Use `/jambot-setup` to add yourself as a jam leader
+- Or check that the `.env` file has the correct `DISCORD_JAM_LEADER_ID`
+
+### Step 3: Verify Bot Can See the Channel
+
+1. Look at the member list on the right side of the channel
+2. Find **jambot** in the list
+3. If the bot isn't there:
+   - Right-click the channel → Edit Channel → Permissions
+   - Add jambot
+   - Enable "View Channel" permission
+
+### Step 4: Test Message Format
+
+Use this exact test message (you can modify the date/time):
+
+```
+Here's the setlist for the 7pm jam on November 20th.
+
+1. Will the Circle Be Unbroken
+2. Rocky Top
+3. Man of Constant Sorrow
+```
+
+**Critical Requirements**:
+- Line 1 must contain: `here's the setlist for the [TIME] jam on [DATE].`
+- There must be a **period (.)** after the date
+- Songs must be numbered: `1. Song Title`
+- Post from a jam leader account (configured via `/jambot-setup` or `.env`)
+
+### Step 5: Check the Logs
+
+Watch the logs in real-time:
+
+```bash
+docker compose logs -f
+```
+
+**If working correctly, you should see**:
+```
+jambot | INFO - Received message from <your name> (ID: YOUR_USER_ID)
+jambot | INFO - Message content preview: Here's the setlist for the 7pm jam...
+jambot | INFO - Detected setlist message from jam leader in channel 123456789
+```
+
+**Diagnosis based on what you see**:
+
+| What You See | Problem | Solution |
+|-------------|---------|----------|
+| No "Received message" logs at all | Message Content Intent not enabled | Go back to Step 1 |
+| Bot can't see the channel | Go back to Step 3 |
+| "Received message" but wrong user ID | Not configured as jam leader | Use `/jambot-setup` to add yourself |
+| "Received message" with correct ID but no "Detected setlist" | Message format wrong | Check message against Step 4 requirements |
+| "Detected setlist message" | ✅ Working! | Bot should now send you a DM |
+
+### Step 6: If Still Not Working
+
+**Check the Discord Developer Portal settings again**:
+1. Ensure these permissions are enabled for the bot:
+   - Send Messages
+   - Read Messages/View Channels
+   - Add Reactions
+   - Read Message History
+
+2. Verify the bot has these intents:
+   - Message Content Intent ← **MOST IMPORTANT**
+   - Server Members Intent
+   - Message Intent (auto-enabled)
+
+**Restart after any changes**:
+```bash
+docker compose down && docker compose up -d
+```
 
 ---
 
@@ -192,7 +303,7 @@ EOF
 ```
 
 2. Regenerate refresh token:
-   - Follow [SETUP_SPOTIFY.md](SETUP_SPOTIFY.md) Step 4
+   - Follow [SPOTIFY_SETUP.md](SPOTIFY_SETUP.md) Step 4
    - Update `.env` with new token
    - Restart bot
 

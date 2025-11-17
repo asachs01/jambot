@@ -8,6 +8,7 @@ from src.logger import logger
 from src.database import Database
 from src.spotify_client import SpotifyClient
 from src.setlist_parser import SetlistParser
+from src.commands import JambotCommands
 
 
 class JamBot(commands.Bot):
@@ -28,22 +29,56 @@ class JamBot(commands.Bot):
         super().__init__(command_prefix='@jambot ', intents=intents)
 
         self.db = Database()
-        self.spotify = SpotifyClient()
+        self._spotify = None  # Lazy initialization
         self.parser = SetlistParser()
+        self.commands_handler = JambotCommands(self, self.db)
 
         # Track active approval workflows
         self.active_workflows: Dict[int, Dict] = {}  # message_id -> workflow data
 
         logger.info("JamBot initialized")
 
+    @property
+    def spotify(self) -> SpotifyClient:
+        """Lazy initialization of Spotify client.
+
+        Returns:
+            SpotifyClient instance.
+        """
+        if self._spotify is None:
+            self._spotify = SpotifyClient()
+        return self._spotify
+
     async def setup_hook(self):
         """Called when the bot is setting up."""
+        # Register slash commands
+        await self.commands_handler.setup()
+
+        # Sync commands with Discord
+        try:
+            synced = await self.tree.sync()
+            logger.info(f"Synced {len(synced)} command(s)")
+        except Exception as e:
+            logger.error(f"Failed to sync commands: {e}", exc_info=True)
+
         logger.info("Bot setup complete")
+
+    async def on_connect(self):
+        """Called when the bot establishes a connection to Discord."""
+        logger.info("Successfully connected to Discord Gateway")
 
     async def on_ready(self):
         """Called when the bot successfully connects to Discord."""
         logger.info(f"Bot logged in as {self.user} (ID: {self.user.id})")
-        logger.info(f"Monitoring messages from jam leader: {Config.DISCORD_JAM_LEADER_ID}")
+        logger.info("Bot is ready. Use /jambot-setup to configure jam leaders and approvers in each server.")
+
+    async def on_disconnect(self):
+        """Called when the bot disconnects from Discord."""
+        logger.warning("Disconnected from Discord")
+
+    async def on_error(self, event, *args, **kwargs):
+        """Called when an error occurs."""
+        logger.error(f"Error in event {event}", exc_info=True)
 
     async def on_message(self, message: discord.Message):
         """Handle incoming messages.
@@ -55,14 +90,121 @@ class JamBot(commands.Bot):
         if message.author.id == self.user.id:
             return
 
-        # Check if message is from jam leader
-        if str(message.author.id) == Config.DISCORD_JAM_LEADER_ID:
+        # Handle DM messages (for manual song selection)
+        if not message.guild:
+            await self.handle_dm_message(message)
+            return
+
+        # Log all messages for debugging
+        logger.info(f"Received message from {message.author} (ID: {message.author.id})")
+        logger.info(f"Message content preview: {message.content[:100]}...")
+
+        # Check if message is from a jam leader
+        if self.db.is_jam_leader(message.guild.id, message.author.id):
             if self.parser.is_setlist_message(message.content):
                 logger.info(f"Detected setlist message from jam leader in channel {message.channel.id}")
                 await self.handle_setlist_message(message)
 
+        # Also fall back to env var for backwards compatibility during migration
+        elif Config.DISCORD_JAM_LEADER_ID and str(message.author.id) == Config.DISCORD_JAM_LEADER_ID:
+            if self.parser.is_setlist_message(message.content):
+                logger.info(f"Detected setlist message from jam leader (env var) in channel {message.channel.id}")
+                await self.handle_setlist_message(message)
+
         # Process commands
         await self.process_commands(message)
+
+    async def handle_dm_message(self, message: discord.Message):
+        """Handle DM messages for manual song selection.
+
+        Allows users to reply to song embed messages with Spotify URLs
+        to manually specify a track instead of using bot suggestions.
+
+        Args:
+            message: Discord DM message object.
+        """
+        try:
+            logger.info(f"Received DM from {message.author} (ID: {message.author.id})")
+            logger.info(f"DM content: {message.content[:200]}")
+
+            # Check if message is a reply to one of our embeds
+            if not message.reference or not message.reference.message_id:
+                logger.info("DM is not a reply to another message")
+                return
+
+            replied_msg_id = message.reference.message_id
+            logger.info(f"DM is a reply to message ID: {replied_msg_id}")
+
+            # Find which workflow this message belongs to
+            workflow_id = None
+            song_number = None
+
+            logger.info(f"Searching through {len(self.active_workflows)} active workflows")
+            for wf_id, workflow in self.active_workflows.items():
+                logger.info(f"  Workflow {wf_id} has {len(workflow['message_ids'])} messages")
+                if replied_msg_id in workflow['message_ids']:
+                    workflow_id = wf_id
+                    # Find which song this message corresponds to
+                    msg_index = workflow['message_ids'].index(replied_msg_id)
+                    if msg_index < len(workflow['song_matches']):
+                        song_number = workflow['song_matches'][msg_index]['number']
+                    logger.info(f"Found workflow {wf_id} for song {song_number}")
+                    break
+
+            if not workflow_id or song_number is None:
+                logger.info(f"DM reply not associated with any active workflow")
+                logger.info(f"  Replied message ID: {replied_msg_id}")
+                logger.info(f"  Active workflow IDs: {list(self.active_workflows.keys())}")
+                return
+
+            # Parse Spotify URL from message content
+            spotify_url = None
+            for word in message.content.split():
+                if 'spotify.com/track/' in word or 'open.spotify.com/track/' in word:
+                    spotify_url = word.strip('<>')  # Remove Discord's angle brackets
+                    break
+
+            if not spotify_url:
+                await message.reply(
+                    "❌ Please provide a Spotify track URL.\n"
+                    "Example: `https://open.spotify.com/track/...`"
+                )
+                return
+
+            # Validate and get track info
+            logger.info(f"User provided manual Spotify URL for song {song_number}: {spotify_url}")
+            track_info = self.spotify.get_track_from_url(spotify_url)
+
+            if not track_info:
+                await message.reply(
+                    "❌ Invalid Spotify track URL or unable to fetch track information.\n"
+                    "Please check the URL and try again."
+                )
+                return
+
+            # Update workflow selection
+            workflow = self.active_workflows[workflow_id]
+            workflow['selections'][song_number] = track_info
+
+            logger.info(
+                f"Updated song {song_number} with manual selection: "
+                f"{track_info['name']} by {track_info['artist']}"
+            )
+
+            # Send confirmation
+            await message.reply(
+                f"✅ **Manual selection confirmed!**\n"
+                f"Song #{song_number}: [{track_info['name']}]({track_info['url']})\n"
+                f"Artist: {track_info['artist']}\n"
+                f"Album: {track_info['album']}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling DM message: {e}", exc_info=True)
+            await message.reply(
+                "❌ An error occurred while processing your request. "
+                "Please try again or contact an administrator."
+            )
 
     async def handle_setlist_message(self, message: discord.Message):
         """Process a detected setlist message.
@@ -74,8 +216,16 @@ class JamBot(commands.Bot):
             # Parse the setlist
             setlist_data = self.parser.parse_setlist(message.content)
             if not setlist_data:
-                logger.error("Failed to parse setlist message")
-                await self.notify_admin(f"⚠️ Failed to parse setlist message from {message.jump_url}")
+                logger.error(
+                    "Failed to parse setlist message. Expected format: "
+                    "\"Here's the setlist for the [time] jam on [date].\" followed by songs with keys."
+                )
+                await self.notify_admin(
+                    f"⚠️ Failed to parse setlist message from {message.jump_url}\n"
+                    f"Expected format: \"Here's the setlist for the [time] jam on [date].\"\n"
+                    f"Followed by songs with keys in parentheses.",
+                    guild_id=message.guild.id if message.guild else None
+                )
                 return
 
             # Search for songs on Spotify and check database
@@ -90,7 +240,10 @@ class JamBot(commands.Bot):
 
         except Exception as e:
             logger.error(f"Error handling setlist message: {e}", exc_info=True)
-            await self.notify_admin(f"❌ Error processing setlist: {e}")
+            await self.notify_admin(
+                f"❌ Error processing setlist: {e}",
+                guild_id=message.guild.id if message.guild else None
+            )
 
     async def find_song_matches(self, songs: List[Dict]) -> List[Dict[str, Any]]:
         """Find Spotify matches for a list of songs.
@@ -120,12 +273,14 @@ class JamBot(commands.Bot):
                         'artist': db_song['artist'],
                         'album': db_song['album'],
                         'url': db_song['spotify_url'],
+                        'uri': f"spotify:track:{db_song['spotify_track_id']}",
                     },
                     'spotify_results': [],
                 }
             else:
                 # Search Spotify
                 spotify_results = self.spotify.search_song(song_title, limit=3)
+                logger.info(f"Spotify search returned {len(spotify_results)} results")
                 match = {
                     'number': song['number'],
                     'title': song_title,
@@ -143,7 +298,7 @@ class JamBot(commands.Bot):
         song_matches: List[Dict],
         original_channel_id: int
     ):
-        """Send approval workflow DM to admin.
+        """Send approval workflow DM to all configured approvers.
 
         Args:
             setlist_data: Parsed setlist data.
@@ -151,74 +306,130 @@ class JamBot(commands.Bot):
             original_channel_id: ID of channel where setlist was posted.
         """
         try:
-            # Get admin user
-            admin = await self.fetch_user(int(Config.DISCORD_ADMIN_ID))
-            if not admin:
-                logger.error("Could not find admin user")
+            # Get guild from channel
+            channel = self.get_channel(original_channel_id)
+            if not channel or not hasattr(channel, 'guild'):
+                logger.error(
+                    f"Could not find guild for channel {original_channel_id}. "
+                    f"Channel may have been deleted or bot lacks permissions."
+                )
                 return
 
-            # Create DM channel
-            dm_channel = await admin.create_dm()
+            guild_id = channel.guild.id
 
-            # Build approval message
-            embed = discord.Embed(
-                title=f"🎵 Setlist Approval: {setlist_data['time']} jam on {setlist_data['date']}",
-                description="Please review and approve the song selections below.",
-                color=discord.Color.blue()
-            )
+            # Get approver IDs from database
+            approver_ids = self.db.get_approver_ids(guild_id)
 
-            # Track selections for this workflow
-            workflow_data = {
-                'setlist_data': setlist_data,
-                'song_matches': song_matches,
-                'original_channel_id': original_channel_id,
-                'selections': {},  # song_number -> track_info
-                'message_ids': [],  # DM message IDs for reaction tracking
-            }
+            # Fall back to env var if no approvers configured
+            if not approver_ids and Config.DISCORD_ADMIN_ID:
+                approver_ids = [int(Config.DISCORD_ADMIN_ID)]
+                logger.info("Using fallback admin from environment variable")
 
-            # Send song-by-song for approval
-            for match in song_matches:
-                song_embed = await self.create_song_approval_embed(match)
-                msg = await dm_channel.send(embed=song_embed)
-                workflow_data['message_ids'].append(msg.id)
+            if not approver_ids:
+                logger.error(
+                    "No approvers configured for this guild. "
+                    "Use /jambot-setup to add approvers who can approve Spotify playlists."
+                )
+                return
 
-                # Add reaction emojis based on options
-                if match['stored_version']:
-                    # Pre-approved version - just add checkmark
-                    await msg.add_reaction(self.APPROVE_EMOJI)
-                    # Auto-select stored version
-                    workflow_data['selections'][match['number']] = match['stored_version']
-                elif len(match['spotify_results']) == 0:
-                    # No matches - add X emoji
-                    await msg.add_reaction(self.REJECT_EMOJI)
-                elif len(match['spotify_results']) == 1:
-                    # Single match - add checkmark to confirm
-                    await msg.add_reaction(self.APPROVE_EMOJI)
-                    # Auto-select the single result
-                    workflow_data['selections'][match['number']] = match['spotify_results'][0]
-                else:
-                    # Multiple matches - add number emojis
-                    for i in range(min(len(match['spotify_results']), 3)):
-                        await msg.add_reaction(self.SELECT_EMOJIS[i])
-
-            # Send summary and final approval message
-            summary_msg = await dm_channel.send(
-                "✅ **Review complete! React with ✅ to create the playlist or ❌ to cancel.**"
-            )
-            await summary_msg.add_reaction(self.APPROVE_EMOJI)
-            await summary_msg.add_reaction(self.REJECT_EMOJI)
-
-            workflow_data['summary_message_id'] = summary_msg.id
-
-            # Store workflow data
-            for msg_id in workflow_data['message_ids'] + [summary_msg.id]:
-                self.active_workflows[msg_id] = workflow_data
-
-            logger.info(f"Sent approval workflow to admin for {len(song_matches)} songs")
+            # Send workflow to all approvers
+            for approver_id in approver_ids:
+                try:
+                    await self._send_approval_workflow_to_user(
+                        approver_id,
+                        setlist_data,
+                        song_matches,
+                        original_channel_id
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send approval workflow to user {approver_id}: {e}")
 
         except Exception as e:
             logger.error(f"Error sending approval workflow: {e}", exc_info=True)
-            await self.notify_admin(f"❌ Failed to send approval workflow: {e}")
+
+    async def _send_approval_workflow_to_user(
+        self,
+        user_id: int,
+        setlist_data: Dict,
+        song_matches: List[Dict],
+        original_channel_id: int
+    ):
+        """Send approval workflow DM to a specific user.
+
+        Args:
+            user_id: Discord user ID to send workflow to.
+            setlist_data: Parsed setlist data.
+            song_matches: List of song matches from database/Spotify.
+            original_channel_id: ID of channel where setlist was posted.
+        """
+        # Get user
+        user = await self.fetch_user(user_id)
+        if not user:
+            logger.error(
+                f"Could not find user {user_id}. "
+                f"User may have left the server or bot lacks permissions. "
+                f"Use /jambot-setup to update approvers."
+            )
+            return
+
+        # Create DM channel
+        dm_channel = await user.create_dm()
+
+        # Build approval message
+        embed = discord.Embed(
+            title=f"🎵 Setlist Approval: {setlist_data['time']} jam on {setlist_data['date']}",
+            description="Please review and approve the song selections below.",
+            color=discord.Color.blue()
+        )
+
+        # Track selections for this workflow
+        workflow_data = {
+            'setlist_data': setlist_data,
+            'song_matches': song_matches,
+            'original_channel_id': original_channel_id,
+            'selections': {},  # song_number -> track_info
+            'message_ids': [],  # DM message IDs for reaction tracking
+        }
+
+        # Send song-by-song for approval
+        for match in song_matches:
+            song_embed = await self.create_song_approval_embed(match)
+            msg = await dm_channel.send(embed=song_embed)
+            workflow_data['message_ids'].append(msg.id)
+
+            # Add reaction emojis based on options
+            if match['stored_version']:
+                # Pre-approved version - just add checkmark
+                await msg.add_reaction(self.APPROVE_EMOJI)
+                # Auto-select stored version
+                workflow_data['selections'][match['number']] = match['stored_version']
+            elif len(match['spotify_results']) == 0:
+                # No matches - add X emoji
+                await msg.add_reaction(self.REJECT_EMOJI)
+            elif len(match['spotify_results']) == 1:
+                # Single match - add checkmark to confirm
+                await msg.add_reaction(self.APPROVE_EMOJI)
+                # Auto-select the single result
+                workflow_data['selections'][match['number']] = match['spotify_results'][0]
+            else:
+                # Multiple matches - add number emojis
+                for i in range(min(len(match['spotify_results']), 3)):
+                    await msg.add_reaction(self.SELECT_EMOJIS[i])
+
+        # Send summary and final approval message
+        summary_msg = await dm_channel.send(
+            "✅ **Review complete! React with ✅ to create the playlist or ❌ to cancel.**"
+        )
+        await summary_msg.add_reaction(self.APPROVE_EMOJI)
+        await summary_msg.add_reaction(self.REJECT_EMOJI)
+
+        workflow_data['summary_message_id'] = summary_msg.id
+
+        # Store workflow data
+        for msg_id in workflow_data['message_ids'] + [summary_msg.id]:
+            self.active_workflows[msg_id] = workflow_data
+
+        logger.info(f"Sent approval workflow to user {user_id} for {len(song_matches)} songs")
 
     async def create_song_approval_embed(self, match: Dict) -> discord.Embed:
         """Create an embed for song approval.
@@ -242,7 +453,7 @@ class JamBot(commands.Bot):
             )
             embed.add_field(
                 name="Track",
-                value=f"[{track['name']}]({track['url']})",
+                value=f"[{track['name']}]({track['url']})\n{track['url']}",
                 inline=False
             )
             embed.add_field(name="Artist", value=track['artist'], inline=True)
@@ -266,7 +477,7 @@ class JamBot(commands.Bot):
             )
             embed.add_field(
                 name="Track",
-                value=f"[{track['name']}]({track['url']})",
+                value=f"[{track['name']}]({track['url']})\n{track['url']}",
                 inline=False
             )
             embed.add_field(name="Artist", value=track['artist'], inline=True)
@@ -279,10 +490,10 @@ class JamBot(commands.Bot):
                 description=f"🎵 **{len(match['spotify_results'])} matches found - React to select**",
                 color=discord.Color.gold()
             )
-            for i, track in enumerate(match['spotify_results'][:3]):
+            for i, track in enumerate(match['spotify_results'][:5]):
                 embed.add_field(
                     name=f"{self.SELECT_EMOJIS[i]} Option {i + 1}",
-                    value=f"[{track['name']}]({track['url']})\n{track['artist']} - {track['album']}",
+                    value=f"[{track['name']}]({track['url']})\n{track['artist']} - {track['album']}\n{track['url']}",
                     inline=False
                 )
 
@@ -356,8 +567,29 @@ class JamBot(commands.Bot):
                 )
                 return
 
+            # Get guild configuration for playlist name and channel
+            channel = self.get_channel(workflow['original_channel_id'])
+            guild_id = channel.guild.id if channel and hasattr(channel, 'guild') else None
+
+            # Get configuration to determine playlist name and target channel
+            config = self.db.get_bot_configuration(guild_id) if guild_id else None
+
+            # Determine playlist name from template or use default
+            if config and config.get('playlist_name_template'):
+                playlist_name = config['playlist_name_template'].format(
+                    date=setlist_data['date'],
+                    time=setlist_data['time']
+                )
+            else:
+                playlist_name = f"Bluegrass Jam {setlist_data['date']}"
+
+            # Determine target channel - use configured channel if set, otherwise original
+            target_channel_id = workflow['original_channel_id']
+            if config and config.get('channel_id'):
+                target_channel_id = config['channel_id']
+                logger.info(f"Using configured channel {target_channel_id} for playlist posting")
+
             # Create setlist in database
-            playlist_name = f"Bluegrass Jam {setlist_data['date']}"
             setlist_id = self.db.create_setlist(
                 date=setlist_data['date'],
                 time=setlist_data['time'],
@@ -408,33 +640,35 @@ class JamBot(commands.Bot):
                 playlist_info['url']
             )
 
-            # Post to original channel
-            channel = self.get_channel(workflow['original_channel_id'])
-            if channel:
-                await channel.send(
+            # Post to target channel
+            target_channel = self.get_channel(target_channel_id)
+            if target_channel:
+                await target_channel.send(
                     f"🎵 **Playlist created!**\n"
                     f"**{playlist_name}**\n"
                     f"{playlist_info['url']}\n"
                     f"({len(track_uris)} songs)"
                 )
 
-            # Notify admin
-            admin = await self.fetch_user(int(Config.DISCORD_ADMIN_ID))
-            dm_channel = await admin.create_dm()
-            await dm_channel.send(
+            # Notify approvers
+            await self.notify_admin(
                 f"✅ **Playlist created successfully!**\n"
                 f"{playlist_info['url']}\n"
-                f"Posted to <#{workflow['original_channel_id']}>"
+                f"Posted to <#{target_channel_id}>",
+                guild_id=guild_id
             )
 
             logger.info(f"Successfully created playlist: {playlist_name}")
 
-            # Cleanup workflow
-            self.cleanup_workflow(workflow)
-
         except Exception as e:
             logger.error(f"Error creating playlist: {e}", exc_info=True)
-            await self.notify_admin(f"❌ Failed to create playlist: {e}")
+            # Try to get guild_id for notification
+            channel = self.get_channel(workflow.get('original_channel_id')) if workflow else None
+            guild_id = channel.guild.id if channel and hasattr(channel, 'guild') else None
+            await self.notify_admin(f"❌ Failed to create playlist: {e}", guild_id=guild_id)
+        finally:
+            # Always cleanup workflow to prevent memory leaks
+            self.cleanup_workflow(workflow)
 
     def cleanup_workflow(self, workflow: Dict):
         """Clean up a completed or cancelled workflow.
@@ -449,16 +683,41 @@ class JamBot(commands.Bot):
 
         logger.info("Cleaned up workflow")
 
-    async def notify_admin(self, message: str):
-        """Send a notification message to the admin.
+    async def notify_admin(self, message: str, guild_id: int = None):
+        """Send a notification message to all configured approvers.
 
         Args:
             message: Message to send.
+            guild_id: Optional guild ID to get approvers for. If None, uses fallback admin.
         """
         try:
-            admin = await self.fetch_user(int(Config.DISCORD_ADMIN_ID))
-            if admin:
-                dm_channel = await admin.create_dm()
-                await dm_channel.send(message)
+            approver_ids = []
+
+            # Try to get approvers from database if guild_id provided
+            if guild_id:
+                approver_ids = self.db.get_approver_ids(guild_id)
+
+            # Fall back to env var if no approvers configured
+            if not approver_ids and Config.DISCORD_ADMIN_ID:
+                approver_ids = [int(Config.DISCORD_ADMIN_ID)]
+                logger.info("Using fallback admin from environment variable")
+
+            if not approver_ids:
+                logger.warning(
+                    "No approvers configured - cannot send notification. "
+                    "Use /jambot-setup to add approvers."
+                )
+                return
+
+            # Send to all approvers
+            for approver_id in approver_ids:
+                try:
+                    user = await self.fetch_user(approver_id)
+                    if user:
+                        dm_channel = await user.create_dm()
+                        await dm_channel.send(message)
+                except Exception as e:
+                    logger.error(f"Failed to notify user {approver_id}: {e}")
+
         except Exception as e:
-            logger.error(f"Failed to notify admin: {e}")
+            logger.error(f"Failed to notify approvers: {e}")

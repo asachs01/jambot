@@ -81,14 +81,39 @@ class Database:
             FOREIGN KEY (song_id) REFERENCES songs(id)
         );
 
+        CREATE TABLE IF NOT EXISTS bot_configuration (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER UNIQUE NOT NULL,
+            jam_leader_ids TEXT NOT NULL,
+            approver_ids TEXT NOT NULL,
+            channel_id INTEGER,
+            playlist_name_template TEXT,
+            updated_at TIMESTAMP NOT NULL,
+            updated_by INTEGER NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(song_title);
         CREATE INDEX IF NOT EXISTS idx_setlists_date ON setlists(date);
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_setlist_id ON setlist_songs(setlist_id);
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_song_id ON setlist_songs(song_id);
+        CREATE INDEX IF NOT EXISTS idx_bot_configuration_guild_id ON bot_configuration(guild_id);
         """
 
         with self.get_connection() as conn:
             conn.executescript(schema)
+
+            # Migrate existing databases - add new columns if they don't exist
+            cursor = conn.execute("PRAGMA table_info(bot_configuration)")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            if 'channel_id' not in columns:
+                conn.execute("ALTER TABLE bot_configuration ADD COLUMN channel_id INTEGER")
+                logger.info("Added channel_id column to bot_configuration table")
+
+            if 'playlist_name_template' not in columns:
+                conn.execute("ALTER TABLE bot_configuration ADD COLUMN playlist_name_template TEXT")
+                logger.info("Added playlist_name_template column to bot_configuration table")
+
             logger.info("Database schema initialized successfully")
 
     def get_song_by_title(self, song_title: str) -> Optional[Dict[str, Any]]:
@@ -251,3 +276,111 @@ class Database:
             if row:
                 return dict(row)
             return None
+
+    def save_bot_configuration(
+        self,
+        guild_id: int,
+        jam_leader_ids: List[int],
+        approver_ids: List[int],
+        channel_id: Optional[int] = None,
+        playlist_name_template: Optional[str] = None,
+        updated_by: Optional[int] = None
+    ):
+        """Save bot configuration for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            jam_leader_ids: List of user IDs who can post setlists.
+            approver_ids: List of user IDs who can approve songs.
+            channel_id: Optional channel ID where playlists should be posted.
+            playlist_name_template: Optional template for playlist names (use {date} and {time} as placeholders).
+            updated_by: User ID who made the update (optional).
+        """
+        # Convert lists to JSON strings for storage
+        import json
+        jam_leader_ids_json = json.dumps(jam_leader_ids)
+        approver_ids_json = json.dumps(approver_ids)
+        updated_at = datetime.now().isoformat()
+
+        with self.get_connection() as conn:
+            # Use INSERT OR REPLACE to handle both create and update
+            conn.execute(
+                """INSERT OR REPLACE INTO bot_configuration
+                   (guild_id, jam_leader_ids, approver_ids, channel_id, playlist_name_template, updated_at, updated_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (guild_id, jam_leader_ids_json, approver_ids_json, channel_id, playlist_name_template, updated_at, updated_by or 0)
+            )
+            logger.info(
+                f"Saved bot configuration for guild {guild_id}: "
+                f"{len(jam_leader_ids)} jam leaders, {len(approver_ids)} approvers, "
+                f"channel: {channel_id}, playlist template: {playlist_name_template}"
+            )
+
+    def get_bot_configuration(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get bot configuration for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            Dictionary with configuration data if found, None otherwise.
+            Configuration includes 'jam_leader_ids' and 'approver_ids' as lists.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM bot_configuration WHERE guild_id = ?",
+                (guild_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                import json
+                config = dict(row)
+                # Parse JSON strings back to lists
+                config['jam_leader_ids'] = json.loads(config['jam_leader_ids'])
+                config['approver_ids'] = json.loads(config['approver_ids'])
+                return config
+            return None
+
+    def is_jam_leader(self, guild_id: int, user_id: int) -> bool:
+        """Check if a user is a jam leader for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            user_id: Discord user ID to check.
+
+        Returns:
+            True if user is a jam leader, False otherwise.
+        """
+        config = self.get_bot_configuration(guild_id)
+        if config:
+            return user_id in config['jam_leader_ids']
+        return False
+
+    def is_approver(self, guild_id: int, user_id: int) -> bool:
+        """Check if a user is an approver for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            user_id: Discord user ID to check.
+
+        Returns:
+            True if user is an approver, False otherwise.
+        """
+        config = self.get_bot_configuration(guild_id)
+        if config:
+            return user_id in config['approver_ids']
+        return False
+
+    def get_approver_ids(self, guild_id: int) -> List[int]:
+        """Get list of approver user IDs for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            List of approver user IDs, or empty list if not configured.
+        """
+        config = self.get_bot_configuration(guild_id)
+        if config:
+            return config['approver_ids']
+        return []

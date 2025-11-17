@@ -25,5 +25,5 @@ USER jambot
 # Set environment variable defaults
 ENV PYTHONUNBUFFERED=1
 
-# Run the bot
-CMD ["python", "-m", "src.main"]
+# Run both web server and bot
+CMD ["python", "-m", "src.app"]

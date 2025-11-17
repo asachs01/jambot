@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__smart-tree__quick_tree",
+      "Bash(find:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

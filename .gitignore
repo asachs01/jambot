@@ -12,6 +12,45 @@ node_modules/
 # Environment variables
 .env
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# Spotify cache
+.cache
+.cache-*
+
+# Database
+data/
+*.db
+*.sqlite
+*.sqlite3
+
 # Editor directories and files
 .idea
 .vscode

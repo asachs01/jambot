@@ -2,15 +2,25 @@
 
 A Discord bot that automatically converts bluegrass jam setlists posted by a jam leader into curated Spotify playlists. The bot monitors Discord messages, extracts song titles, finds them on Spotify, validates selections through an admin approval workflow, and creates shareable Spotify playlists.
 
+## Deploy to DigitalOcean
+
+Get started in minutes with one-click deployment:
+
+[![Deploy to DO](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/asachs01/jambot/tree/main)
+
+See the [Deployment Guide](DEPLOY_TO_DIGITALOCEAN.md) for detailed instructions.
+
 ## Features
 
-- **Automatic Setlist Detection**: Monitors messages from a configured jam leader and detects setlist patterns
-- **Smart Song Matching**: Searches Spotify with intelligent fuzzy matching for common bluegrass song variations
-- **Song Version Memory**: Remembers approved song versions across multiple jams for consistency
-- **Admin Approval Workflow**: DM-based validation system with emoji reactions for song selection
-- **Manual Overrides**: Support for manual song replacement via commands
-- **Persistent Storage**: SQLite database for song history and setlist tracking
-- **Container-Ready**: Docker support for easy deployment to DigitalOcean Container App
+- **🎛️ Modal-Based Configuration**: Configure jam leaders and approvers via Discord slash commands (no server restart required!)
+- **👥 Multi-User Support**: Multiple jam leaders and song approvers per server
+- **🤖 Automatic Setlist Detection**: Monitors messages from configured jam leaders and detects setlist patterns
+- **🎵 Smart Song Matching**: Searches Spotify with intelligent fuzzy matching for common bluegrass song variations
+- **💾 Song Version Memory**: Remembers approved song versions across multiple jams for consistency
+- **✅ Admin Approval Workflow**: DM-based validation system with emoji reactions for song selection
+- **🔧 Manual Overrides**: Support for manual song replacement via commands
+- **📊 Persistent Storage**: SQLite database for song history and setlist tracking
+- **🐳 Container-Ready**: Docker support for easy deployment to DigitalOcean Container App
 
 ## Quick Start
 
@@ -18,7 +28,7 @@ A Discord bot that automatically converts bluegrass jam setlists posted by a jam
 
 - Python 3.11+
 - Discord Bot Token ([Setup Guide](SETUP_DISCORD.md))
-- Spotify API Credentials ([Setup Guide](SETUP_SPOTIFY.md))
+- Spotify API Credentials ([Setup Guide](SPOTIFY_SETUP.md))
 - Docker (optional, for containerized deployment)
 
 ### Installation
@@ -36,14 +46,46 @@ pip install -r requirements.txt
 
 3. Configure environment variables:
 ```bash
-cp .env.example .env
-# Edit .env with your credentials
+cp .env.example.jambot .env
+# Edit .env with your Discord credentials first
+
+# Then run the Spotify auth helper to get your refresh token
+python spotify_auth.py
+# Follow the prompts and add the output to your .env file
 ```
 
 4. Run the bot:
 ```bash
 python -m src.main
 ```
+
+## Configuration
+
+### Discord Configuration (Recommended Method)
+
+Once your bot is running, configure jam leaders and approvers directly in Discord:
+
+1. **Get User IDs**: Use `/jambot-getid @username` to get Discord user IDs
+2. **Configure**: Run `/jambot-setup` (admin only) to open the configuration modal
+3. **Enter User IDs**: Add jam leader and approver user IDs (comma-separated)
+
+**Example:**
+- Jam Leaders: `123456789012345678, 987654321098765432`
+- Approvers: `111222333444555666, 777888999000111222`
+
+✅ **Benefits**: Multiple users, no restart required, per-server configuration
+
+See [CONFIGURATION.md](CONFIGURATION.md) for detailed configuration guide.
+
+### Environment Variables (Legacy Method)
+
+Alternatively, you can configure via environment variables in `.env`:
+```env
+DISCORD_JAM_LEADER_ID="123456789012345678"
+DISCORD_ADMIN_ID="987654321098765432"
+```
+
+⚠️ **Note**: Database configuration takes precedence over environment variables.
 
 ### Docker Deployment (Local or Self-Hosted)
 
@@ -173,7 +215,7 @@ jambot/
 ## Documentation
 
 - [Discord Bot Setup](SETUP_DISCORD.md) - How to create and configure the Discord bot
-- [Spotify API Setup](SETUP_SPOTIFY.md) - How to set up Spotify developer credentials
+- [Spotify API Setup](SPOTIFY_SETUP.md) - How to set up Spotify developer credentials
 - [Deployment Guide](DEPLOYMENT.md) - DigitalOcean App Platform deployment
 - [Deployment Options](DEPLOYMENT_OPTIONS.md) - Compare all deployment methods
 - [Admin Guide](ADMIN_GUIDE.md) - Using the approval workflow

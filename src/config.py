@@ -29,15 +29,18 @@ class Config:
 
     @classmethod
     def validate(cls):
-        """Validate that all required configuration is present."""
+        """Validate that all required configuration is present.
+
+        Note: DISCORD_JAM_LEADER_ID and DISCORD_ADMIN_ID are optional as they
+        can be configured via the /jambot-setup modal instead.
+
+        SPOTIFY_REFRESH_TOKEN is also optional as tokens can be stored in the database.
+        """
         required_vars = [
             'DISCORD_BOT_TOKEN',
-            'DISCORD_JAM_LEADER_ID',
-            'DISCORD_ADMIN_ID',
             'SPOTIFY_CLIENT_ID',
             'SPOTIFY_CLIENT_SECRET',
             'SPOTIFY_REDIRECT_URI',
-            'SPOTIFY_REFRESH_TOKEN',
         ]
 
         missing = []

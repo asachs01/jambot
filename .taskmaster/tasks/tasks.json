@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": 1,
+        "id": "1",
         "title": "Project Setup and Environment Configuration",
         "description": "Initialize the Python project, set up Docker, configure environment variables, and prepare for Discord and Spotify integration.",
         "details": "Use Python 3.11+. Create a Dockerfile that installs dependencies (discord.py v2.x, spotipy v2.23+, sqlite3, python-dotenv). Prepare a .env.example file with all required variables. Ensure persistent volume for SQLite. Configure DigitalOcean Container App deployment with resource limits (512MB RAM, 0.5 vCPU, 1GB volume). Use python-dotenv to load environment variables securely. Set file permissions for the SQLite database to restrict access to the bot process only.",
@@ -13,137 +13,220 @@
         "subtasks": []
       },
       {
-        "id": 2,
+        "id": "2",
         "title": "Discord Bot Initialization and Message Monitoring",
         "description": "Implement Discord bot startup, connect to server, and monitor messages from the configured jam leader for setlist detection.",
         "details": "Use discord.py v2.x with required intents (Message Content, Server Members). Authenticate using DISCORD_BOT_TOKEN from .env. Monitor messages in specified channels from DISCORD_JAM_LEADER_ID. Implement async/await for all Discord operations. Log all bot startup and message events using Python's logging module with rotating file handler.",
         "testStrategy": "Post test messages as jam leader and verify bot detects them. Confirm bot logs all events and errors. Simulate Discord API errors and check error handling and logging.",
         "priority": "high",
         "dependencies": [
-          1
+          "1"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "Setlist Message Parsing and Extraction",
         "description": "Parse detected setlist messages, extract jam date, time, and song list, allowing for minor intro text variations.",
         "details": "Use regular expressions to match setlist patterns, extracting date, time, and numbered song titles (strip key info). Implement robust parsing to handle minor variations in intro text. Validate extracted data and log warnings for unrecognized formats. Store parsed setlist in memory for further processing.",
         "testStrategy": "Test with multiple setlist message formats. Validate extraction accuracy against acceptance criteria. Log and skip unrecognized formats.",
         "priority": "high",
         "dependencies": [
-          2
+          "2"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 4,
+        "id": "4",
         "title": "SQLite Database Schema Design and Implementation",
         "description": "Design and implement the SQLite database schema for songs, setlists, and setlist-song relationships.",
         "details": "Create tables: songs, setlists, setlist_songs as specified. Use sqlite3 with connection pooling for reliability. Ensure atomic transactions for all write operations. Implement schema migrations using Alembic or a simple versioning script. Set up indices on song_title and setlist date for fast lookups. Use parameterized queries to prevent SQL injection.",
         "testStrategy": "Run schema creation and migration scripts. Validate table structure and constraints. Test atomicity by simulating concurrent writes. Verify indices improve query performance.",
         "priority": "high",
         "dependencies": [
-          1
+          "1"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "Song Matching: Database Lookup and Spotify Search",
         "description": "For each song, check for previously approved versions in the database, otherwise search Spotify for matches.",
         "details": "For each song, query the songs table for existing version. If not found, use spotipy v2.23+ to search Spotify with exact title. If no match, try common bluegrass variations (maintain a mapping or use a configurable list). Limit fuzzy matching to avoid irrelevant results. Return up to 3 matches per new song, capturing track name, artist, album, Spotify track ID, and URL. Handle Spotify API rate limits with exponential backoff and retries.",
         "testStrategy": "Test with songs present and absent in the database. Validate Spotify search results for accuracy and relevance. Simulate rate limits and verify retry logic.",
         "priority": "high",
         "dependencies": [
-          3,
-          4
+          "3",
+          "4"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "Admin Validation Workflow via Discord DM",
         "description": "Send a DM to the admin with song match details, support emoji-based approval, manual overrides, and summary confirmation.",
         "details": "Use discord.py to send formatted DMs to DISCORD_ADMIN_ID. For each song, display: pre-approved version (✅), single match (✅), multiple matches (1️⃣ 2️⃣ 3️⃣), or no match (❌, prompt for link). Listen for emoji reactions and message replies. Allow admin to override with Spotify link. After all songs, present summary and request final approval. Implement async/await for all Discord operations. Log all admin actions for audit.",
         "testStrategy": "Simulate setlist detection and verify DM formatting. Test all approval scenarios (emoji, manual link, skip). Confirm summary and final approval flow. Validate logging of admin actions.",
         "priority": "high",
         "dependencies": [
-          5
+          "5"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "Manual Song Management Command Implementation",
         "description": "Implement the '@jambot use this version of [song name] for [setlist date] [spotify link]' command for manual overrides.",
         "details": "Parse command using discord.py command framework. Validate Spotify link format using regex. Update song version in setlist (if before playlist creation) and in songs table for future use. Confirm update to admin via DM. Log all manual overrides for audit. Ensure command is only accessible to admin.",
         "testStrategy": "Test command with valid and invalid Spotify links. Verify updates in database and setlist. Confirm admin receives confirmation. Check access control.",
         "priority": "medium",
         "dependencies": [
-          4,
-          6
+          "4",
+          "6"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "Spotify Playlist Creation and Posting",
         "description": "Create Spotify playlist under configured account, add approved tracks in order, and post link to Discord channel.",
         "details": "Use spotipy with OAuth refresh token for authentication. Create playlist named 'Bluegrass Jam [MM/DD/YYYY]'. Add tracks in setlist order. Handle API errors gracefully, retry if needed, and notify admin if failure persists. Post playlist link to original Discord channel using discord.py. Store playlist info in setlists table. Ensure playlist-modify-public/private scopes are set.",
         "testStrategy": "Approve setlist and trigger playlist creation. Validate playlist name, track order, and link posting. Simulate Spotify API errors and verify error handling and admin notification.",
         "priority": "high",
         "dependencies": [
-          6
+          "6"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 9,
+        "id": "9",
         "title": "Song Version Memory and Setlist History Management",
         "description": "Update song usage dates, maintain setlist-song relationships, and ensure version consistency across sessions.",
         "details": "On playlist creation, update last_used date for each song in songs table. Insert setlist and setlist_songs records to maintain history. Ensure first_used is set for new songs. Implement queries to retrieve version consistency stats. Use indices for efficient lookups. Log all updates for audit.",
         "testStrategy": "Create multiple setlists with repeat songs. Verify last_used and first_used dates update correctly. Check setlist-song relationships in database. Validate version consistency rate.",
         "priority": "medium",
         "dependencies": [
-          8
+          "8"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 10,
+        "id": "10",
         "title": "Comprehensive Error Handling, Logging, and Documentation",
         "description": "Implement robust error handling, logging, and provide complete setup and admin documentation.",
         "details": "Use Python logging with INFO/ERROR levels, rotating file handler, and stdout. Log timestamp, level, module, message. Handle all error scenarios (Discord/Spotify API, database, playlist creation) with retries and admin notifications. Document setup (README), .env.example, database schema, deployment guide, admin workflow, and troubleshooting. Ensure code is well-commented and uses async/await throughout.",
         "testStrategy": "Simulate all error scenarios and verify logging and notifications. Review documentation for completeness and clarity. Check code comments and async usage.",
         "priority": "medium",
         "dependencies": [
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
-          8,
-          9
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9"
         ],
         "status": "pending",
         "subtasks": []
+      },
+      {
+        "id": "11",
+        "title": "Implement Modal-Based Configuration System for Jam Leaders and Approvers",
+        "description": "Replace environment variable configuration for jam leaders and song approvers with a Discord modal-based UI, accessible via a /jambot setup slash command, storing configuration in the database and enforcing admin-only access.",
+        "details": "1. Use discord.py v2.x's support for modals and slash commands to implement a /jambot setup command. When invoked, check that the user has administrator permissions in the server (using `interaction.user.guild_permissions.administrator`).\n\n2. On valid invocation, present a modal to the user. The modal should include Discord user select components for configuring multiple jam leaders and song approvers. Use the Discord API's User Select component in modals, allowing up to 25 users per select as per Discord's documented limits[2].\n\n3. On modal submission, extract the selected user IDs for both jam leaders and approvers from the interaction data. Validate that at least one jam leader and one approver are selected.\n\n4. Store the configuration in the database (e.g., a new 'configuration' table or as part of a 'settings' table), associating the selected user IDs with the guild/server ID. Ensure atomic writes and handle concurrent updates safely.\n\n5. Remove any use of environment variables for jam leader and approver configuration. Retain environment variables only for bot token and Spotify credentials.\n\n6. Provide clear feedback to the admin on success or failure of the configuration update, and log all configuration changes for audit purposes.\n\n7. Follow Discord's best practices for modal interaction handling: show the modal as the first response to the slash command interaction, and handle modal submissions in a dedicated event handler[3][5].\n\n8. Ensure code is well-structured, with clear separation between command registration, permission checks, modal construction, submission handling, and database operations.",
+        "testStrategy": "1. Register the /jambot setup command and verify it is only accessible to server admins.\n\n2. Invoke the command as an admin and confirm the modal appears with user select components for both jam leaders and approvers, supporting multiple selections.\n\n3. Submit the modal with various valid and invalid combinations (e.g., no selection, duplicate users) and verify correct validation and error handling.\n\n4. Check that the selected user IDs are correctly stored in the database and associated with the correct guild.\n\n5. Attempt to invoke the command as a non-admin and confirm access is denied.\n\n6. Confirm that environment variables for jam leader and approver are no longer used, and that bot token and Spotify credentials remain environment-based.\n\n7. Review logs to ensure all configuration changes are recorded with timestamps and user IDs.\n\n8. Simulate concurrent configuration updates and verify database consistency.",
+        "status": "done",
+        "dependencies": [
+          "2",
+          "4"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Register /jambot setup Slash Command with Admin-Only Access",
+            "description": "Implement the /jambot setup slash command using discord.py v2.x, ensuring only server administrators can invoke it.",
+            "dependencies": [],
+            "details": "Use discord.py's app_commands to register the slash command. In the command handler, check interaction.user.guild_permissions.administrator before proceeding. If the user lacks permissions, respond with an error message and do not show the modal.",
+            "status": "done",
+            "testStrategy": "Attempt to invoke the command as both admin and non-admin users. Confirm only admins can access the modal.",
+            "updatedAt": "2025-11-17T14:31:00.098Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Design and Present Modal with User Select Components for Jam Leaders and Approvers",
+            "description": "Create a modal dialog that allows admins to select multiple Discord users as jam leaders and song approvers, using Discord's User Select component.",
+            "dependencies": [
+              1
+            ],
+            "details": "On valid command invocation, present a modal using discord.ui.Modal. Add two user select components, each supporting up to 25 users, for jam leaders and approvers. Ensure the modal is shown as the first response to the interaction.",
+            "status": "done",
+            "testStrategy": "Invoke the command as an admin and verify the modal appears with both user select components, supporting multiple selections.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-17T14:31:01.604Z"
+          },
+          {
+            "id": 3,
+            "title": "Handle Modal Submission and Validate Selected Users",
+            "description": "Process modal submissions, extract selected user IDs for jam leaders and approvers, and validate that at least one user is selected for each role.",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement a callback for modal submission. Extract user IDs from the interaction data. Check that at least one jam leader and one approver are selected. If validation fails, send an error message to the admin.",
+            "status": "done",
+            "testStrategy": "Submit the modal with various valid and invalid selections. Confirm validation logic and error handling work as expected.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-17T14:31:03.255Z"
+          },
+          {
+            "id": 4,
+            "title": "Store Configuration in Database and Remove Environment Variable Usage",
+            "description": "Persist the selected jam leaders and approvers in the database, associating them with the guild ID, and eliminate environment variable usage for these roles.",
+            "dependencies": [
+              3
+            ],
+            "details": "Create or update a configuration/settings table in the database to store user IDs for jam leaders and approvers per guild. Ensure atomic writes and safe concurrent updates. Refactor code to remove environment variable checks for these roles, retaining them only for bot token and Spotify credentials.",
+            "status": "done",
+            "testStrategy": "Verify database updates after modal submission. Confirm environment variables are no longer used for jam leader/approver configuration.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-17T14:32:37.492Z"
+          },
+          {
+            "id": 5,
+            "title": "Provide Feedback, Log Configuration Changes, and Ensure Code Structure",
+            "description": "Send clear feedback to admins on configuration success or failure, log all changes for audit, and maintain separation of concerns in code structure.",
+            "dependencies": [
+              4
+            ],
+            "details": "After database update, send a success or error message to the admin. Log all configuration changes with timestamp, user, and details. Ensure code is organized with separate modules/functions for command registration, permission checks, modal construction, submission handling, and database operations.",
+            "status": "done",
+            "testStrategy": "Check admin receives appropriate feedback. Review logs for completeness. Inspect code for clear separation of concerns.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-17T14:32:38.964Z"
+          }
+        ],
+        "updatedAt": "2025-11-17T14:32:38.964Z"
       }
     ],
     "metadata": {
-      "created": "2025-11-14T14:47:22.671Z",
-      "updated": "2025-11-14T14:47:22.671Z",
-      "description": "Tasks for master context"
+      "version": "1.0.0",
+      "lastModified": "2025-11-17T14:32:38.964Z",
+      "taskCount": 11,
+      "completedCount": 1,
+      "tags": [
+        "master"
+      ]
     }
   }
 }

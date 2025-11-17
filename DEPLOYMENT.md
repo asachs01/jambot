@@ -7,7 +7,7 @@ This guide explains how to deploy Jambot to DigitalOcean's Container App platfor
 - DigitalOcean account
 - `doctl` CLI tool installed ([Installation Guide](https://docs.digitalocean.com/reference/doctl/how-to/install/))
 - Docker installed locally
-- Completed [Discord](SETUP_DISCORD.md) and [Spotify](SETUP_SPOTIFY.md) setup
+- Completed [Discord](SETUP_DISCORD.md) and [Spotify](SPOTIFY_SETUP.md) setup
 
 ## Overview
 
