@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Guide – JamBot Documentation</title>
+    <meta name="description" content="Complete setup guide for JamBot - Discord and Spotify configuration.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --orange: #C86A2A;
+            --orange-dark: #A0501E;
+            --brown: #3B2618;
+            --cream: #F2E3C8;
+            --green: #1DB954;
+            --tan: #8B5E3C;
+            --light-orange: #FFD18A;
+        }
+
+        body {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--brown);
+            line-height: 1.7;
+            font-size: 18px;
+            background: white;
+        }
+
+        /* Header */
+        .header {
+            background: var(--orange);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            text-decoration: none;
+            color: white;
+        }
+
+        .header-brand img {
+            width: 40px;
+            height: 40px;
+        }
+
+        .header-brand h1 {
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .header-nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 32px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .header-nav a:hover {
+            opacity: 0.8;
+        }
+
+        /* Main Layout */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 60px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: sticky;
+            top: 40px;
+            height: fit-content;
+        }
+
+        .sidebar h3 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--tan);
+            margin-bottom: 16px;
+        }
+
+        .sidebar ul {
+            list-style: none;
+        }
+
+        .sidebar li {
+            margin-bottom: 8px;
+        }
+
+        .sidebar a {
+            color: var(--brown);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+            display: block;
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+
+        .sidebar a:hover {
+            background: var(--cream);
+            color: var(--orange);
+        }
+
+        .sidebar a.active {
+            background: var(--orange);
+            color: white;
+        }
+
+        /* Content */
+        .content {
+            max-width: 800px;
+        }
+
+        .content h1 {
+            font-size: 42px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h2 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-top: 48px;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            color: var(--brown);
+        }
+
+        .content p {
+            margin-bottom: 16px;
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 16px;
+            padding-left: 32px;
+        }
+
+        .content li {
+            margin-bottom: 8px;
+        }
+
+        .content a {
+            color: var(--orange);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        /* Code blocks */
+        .content code {
+            background: var(--cream);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Fira Code', monospace;
+            font-size: 16px;
+            color: var(--orange-dark);
+        }
+
+        .content pre {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 24px;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: var(--cream);
+            font-size: 14px;
+        }
+
+        /* Alert boxes */
+        .alert {
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: #E3F2FD;
+            border-color: #2196F3;
+            color: #0D47A1;
+        }
+
+        .alert-warning {
+            background: #FFF3E0;
+            border-color: #FF9800;
+            color: #E65100;
+        }
+
+        .alert-success {
+            background: #E8F5E9;
+            border-color: #4CAF50;
+            color: #1B5E20;
+        }
+
+        .step-badge {
+            display: inline-block;
+            background: var(--orange);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: 800;
+            margin-right: 8px;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 40px 0;
+            margin-top: 80px;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            text-align: center;
+        }
+
+        .footer-content a {
+            color: var(--light-orange);
+            text-decoration: none;
+            margin: 0 16px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+            }
+
+            .header-nav {
+                display: none;
+            }
+
+            .content h1 {
+                font-size: 32px;
+            }
+
+            .content h2 {
+                font-size: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="../index.html" class="header-brand">
+                <img src="../assets/icon.png" alt="JamBot">
+                <h1>JamBot Docs</h1>
+            </a>
+            <nav class="header-nav">
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <h3>Documentation</h3>
+            <ul>
+                <li><a href="setup.html" class="active">Setup Guide</a></li>
+                <li><a href="configuration.html">Configuration</a></li>
+                <li><a href="deployment.html">Deployment</a></li>
+                <li><a href="admin-guide.html">Admin Guide</a></li>
+                <li><a href="troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+        </aside>
+
+        <!-- Content -->
+        <main class="content">
+            <h1>Setup Guide</h1>
+            <p>This guide will walk you through setting up JamBot for your Discord server. You'll need to create both a Discord bot and a Spotify application.</p>
+
+            <h2><span class="step-badge">1</span>Discord Bot Setup</h2>
+
+            <h3>Create a Discord Application</h3>
+            <ol>
+                <li>Go to the <a href="https://discord.com/developers/applications" target="_blank">Discord Developer Portal</a></li>
+                <li>Click <strong>"New Application"</strong></li>
+                <li>Give it a name (e.g., "JamBot") and click <strong>"Create"</strong></li>
+            </ol>
+
+            <h3>Configure Bot Settings</h3>
+            <ol>
+                <li>In the left sidebar, click <strong>"Bot"</strong></li>
+                <li>Click <strong>"Add Bot"</strong> → <strong>"Yes, do it!"</strong></li>
+                <li>Under <strong>"Privileged Gateway Intents"</strong>, enable:
+                    <ul>
+                        <li>✅ Message Content Intent</li>
+                        <li>✅ Server Members Intent</li>
+                    </ul>
+                </li>
+                <li>Click <strong>"Save Changes"</strong></li>
+            </ol>
+
+            <h3>Get Your Bot Token</h3>
+            <div class="alert alert-warning">
+                <strong>⚠️ Keep your token secret!</strong> Never share it or commit it to version control.
+            </div>
+            <ol>
+                <li>Under the <strong>"Token"</strong> section, click <strong>"Reset Token"</strong></li>
+                <li>Click <strong>"Copy"</strong> to copy your bot token</li>
+                <li>Save this token - you'll need it for the <code>.env</code> file</li>
+            </ol>
+
+            <h3>Add Bot to Your Server</h3>
+            <ol>
+                <li>In the left sidebar, click <strong>"OAuth2"</strong> → <strong>"URL Generator"</strong></li>
+                <li>Under <strong>"Scopes"</strong>, select:
+                    <ul>
+                        <li>✅ <code>bot</code></li>
+                        <li>✅ <code>applications.commands</code></li>
+                    </ul>
+                </li>
+                <li>Under <strong>"Bot Permissions"</strong>, select:
+                    <ul>
+                        <li>✅ Read Messages/View Channels</li>
+                        <li>✅ Send Messages</li>
+                        <li>✅ Send Messages in Threads</li>
+                        <li>✅ Read Message History</li>
+                        <li>✅ Add Reactions</li>
+                        <li>✅ Use Slash Commands</li>
+                    </ul>
+                </li>
+                <li>Copy the generated URL at the bottom</li>
+                <li>Paste the URL in your browser and select your Discord server</li>
+                <li>Click <strong>"Authorize"</strong></li>
+            </ol>
+
+            <div class="alert alert-success">
+                <strong>✅ Discord Setup Complete!</strong> Your bot should now appear in your server (offline until you run it).
+            </div>
+
+            <h2><span class="step-badge">2</span>Spotify API Setup</h2>
+
+            <h3>Create a Spotify Application</h3>
+            <ol>
+                <li>Go to the <a href="https://developer.spotify.com/dashboard" target="_blank">Spotify Developer Dashboard</a></li>
+                <li>Log in with your Spotify account</li>
+                <li>Click <strong>"Create app"</strong></li>
+                <li>Fill in the form:
+                    <ul>
+                        <li><strong>App name:</strong> JamBot</li>
+                        <li><strong>App description:</strong> Discord bot for bluegrass jam playlists</li>
+                        <li><strong>Redirect URI:</strong> <code>http://localhost:8888/callback</code></li>
+                        <li><strong>API/SDKs:</strong> Select "Web API"</li>
+                    </ul>
+                </li>
+                <li>Agree to the terms and click <strong>"Save"</strong></li>
+            </ol>
+
+            <h3>Get Your Spotify Credentials</h3>
+            <ol>
+                <li>Click on your newly created app</li>
+                <li>Click <strong>"Settings"</strong></li>
+                <li>You'll see:
+                    <ul>
+                        <li><strong>Client ID</strong> - Copy this</li>
+                        <li><strong>Client Secret</strong> - Click "View client secret" and copy it</li>
+                    </ul>
+                </li>
+                <li>Save both of these - you'll need them for authentication</li>
+            </ol>
+
+            <h3>Get Your Refresh Token</h3>
+            <p>JamBot includes a helper script to get your Spotify refresh token:</p>
+
+            <pre><code># 1. Create your .env file
+cp .env.example .env
+
+# 2. Add your Discord and Spotify credentials to .env
+# DISCORD_BOT_TOKEN=your_discord_token
+# SPOTIFY_CLIENT_ID=your_client_id
+# SPOTIFY_CLIENT_SECRET=your_client_secret
+# SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
+
+# 3. Run the Spotify auth helper
+python spotify_auth.py
+
+# 4. Follow the prompts:
+# - A browser window will open
+# - Log in to Spotify and authorize the app
+# - You'll be redirected (the page will show an error - that's normal!)
+# - Copy the refresh token from the terminal output
+
+# 5. Add the refresh token to your .env file
+# SPOTIFY_REFRESH_TOKEN=your_refresh_token_here</code></pre>
+
+            <div class="alert alert-info">
+                <strong>💡 Alternative:</strong> If you're deploying to DigitalOcean App Platform, you can use the web-based auth flow instead. See the <a href="deployment.html">Deployment Guide</a> for details.
+            </div>
+
+            <div class="alert alert-success">
+                <strong>✅ Spotify Setup Complete!</strong> You now have all the credentials needed to run JamBot.
+            </div>
+
+            <h2><span class="step-badge">3</span>Configuration</h2>
+
+            <p>Your <code>.env</code> file should now look like this:</p>
+
+            <pre><code># Discord Configuration
+DISCORD_BOT_TOKEN=your_discord_bot_token_here
+
+# Spotify Configuration
+SPOTIFY_CLIENT_ID=your_spotify_client_id_here
+SPOTIFY_CLIENT_SECRET=your_spotify_client_secret_here
+SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
+SPOTIFY_REFRESH_TOKEN=your_spotify_refresh_token_here
+
+# Database Configuration (optional)
+DATABASE_PATH=/app/data/jambot.db
+
+# Logging Configuration (optional)
+LOG_LEVEL=INFO
+LOG_FILE=/app/logs/jambot.log</code></pre>
+
+            <h2><span class="step-badge">4</span>Run JamBot</h2>
+
+            <h3>Using Python Directly</h3>
+            <pre><code># Install dependencies
+pip install -r requirements.txt
+
+# Run the bot
+python -m src.main</code></pre>
+
+            <h3>Using Docker</h3>
+            <pre><code># Build and run with Docker Compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f jambot</code></pre>
+
+            <div class="alert alert-success">
+                <strong>🎉 JamBot is running!</strong> Head over to the <a href="configuration.html">Configuration Guide</a> to set up jam leaders and approvers.
+            </div>
+
+            <h2>Next Steps</h2>
+            <ul>
+                <li><a href="configuration.html">Configure jam leaders and approvers</a></li>
+                <li><a href="admin-guide.html">Learn how to use the approval workflow</a></li>
+                <li><a href="deployment.html">Deploy to DigitalOcean</a></li>
+                <li><a href="troubleshooting.html">Troubleshooting common issues</a></li>
+            </ul>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <p>
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </p>
+            <p style="margin-top: 16px; opacity: 0.8;">© 2025 JamBot • Made with ❤️ for bluegrass communities</p>
+        </div>
+    </footer>
+</body>
+</html>
