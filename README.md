@@ -2,6 +2,12 @@
 
 A Discord bot that automatically converts bluegrass jam setlists posted by a jam leader into curated Spotify playlists. The bot monitors Discord messages, extracts song titles, finds them on Spotify, validates selections through an admin approval workflow, and creates shareable Spotify playlists.
 
+## Demo
+
+See JamBot in action:
+
+[![JamBot Demo](https://img.youtube.com/vi/y_6O6gqDYGM/maxresdefault.jpg)](https://www.youtube.com/watch?v=y_6O6gqDYGM)
+
 ## Deploy to DigitalOcean
 
 Get started in minutes with one-click deployment:
