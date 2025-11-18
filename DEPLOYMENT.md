@@ -1,394 +1,250 @@
-# Deployment Guide - DigitalOcean Container App
+# Deploy to DigitalOcean App Platform
 
-This guide explains how to deploy Jambot to DigitalOcean's Container App platform.
+This guide will help you deploy Jambot to DigitalOcean's App Platform with a simple one-click setup.
 
-## Prerequisites
+## Quick Deploy
 
-- DigitalOcean account
-- `doctl` CLI tool installed ([Installation Guide](https://docs.digitalocean.com/reference/doctl/how-to/install/))
-- Docker installed locally
-- Completed [Discord](SETUP_DISCORD.md) and [Spotify](SPOTIFY_SETUP.md) setup
+[![Deploy to DO](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/asachs01/jambot/tree/main)
 
-## Overview
+## Step-by-Step Deployment
 
-DigitalOcean Container Apps provide:
-- Managed container hosting
-- Automatic HTTPS and load balancing
-- Built-in monitoring and logs
-- Persistent volume support (for SQLite database)
-- Resource limits and scaling
+### 1. Prerequisites
 
-## Step 1: Install and Configure doctl
+- A DigitalOcean account ([Sign up here](https://cloud.digitalocean.com/registrations/new))
+- Discord Bot Token ([Setup Guide](SETUP_DISCORD.md))
+- Spotify API Credentials ([Setup Guide](SETUP_SPOTIFY.md))
 
-1. Install doctl:
-```bash
-# macOS
-brew install doctl
+### 2. Deploy to App Platform
 
-# Linux
-cd ~
-wget https://github.com/digitalocean/doctl/releases/download/v1.94.0/doctl-1.94.0-linux-amd64.tar.gz
-tar xf ~/doctl-1.94.0-linux-amd64.tar.gz
-sudo mv ~/doctl /usr/local/bin
-```
+#### Option A: One-Click Deploy (Recommended)
 
-2. Authenticate:
-```bash
-doctl auth init
-```
+1. Click the **"Deploy to DigitalOcean"** button above
+2. DigitalOcean will prompt you to authorize access to your GitHub account
+3. Fork or import the repository
+4. Continue to the next step
 
-Follow the prompts to enter your DigitalOcean API token.
-
-## Step 2: Create Container Registry
-
-1. Create a registry:
-```bash
-doctl registry create jambot-registry
-```
-
-2. Log in to the registry:
-```bash
-doctl registry login
-```
-
-## Step 3: Build and Push Docker Image
-
-1. Build the image:
-```bash
-docker build -t jambot:latest .
-```
-
-2. Tag the image for your registry:
-```bash
-# Get your registry name
-doctl registry get
-
-# Tag the image (replace YOUR_REGISTRY with your registry name)
-docker tag jambot:latest registry.digitalocean.com/YOUR_REGISTRY/jambot:latest
-```
-
-3. Push to DigitalOcean Container Registry:
-```bash
-docker push registry.digitalocean.com/YOUR_REGISTRY/jambot:latest
-```
-
-## Step 4: Deploy Using DigitalOcean Console (Recommended)
-
-The easiest way to deploy is through the DigitalOcean web console:
+#### Option B: Manual Deployment
 
 1. Go to [DigitalOcean App Platform](https://cloud.digitalocean.com/apps)
 2. Click **"Create App"**
-3. Choose **"DigitalOcean Container Registry"**
-4. Select your registry and the `jambot` repository
-5. Choose **"Worker"** as the resource type (not Web Service - Discord bots don't need HTTP)
-6. Configure:
-   - **Name**: jambot
-   - **Instance Size**: Basic (512 MB RAM, $5/mo)
-   - **Instance Count**: 1
-7. Add environment variables (see Step 6)
-8. Click **"Next"** → **"Create Resources"**
+3. Select **"GitHub"** as your source
+4. Choose the `jambot` repository
+5. Select the `main` branch
+6. Click **"Next"**
 
-### Alternative: Deploy Using app.yaml
+### 3. Configure Environment Variables
 
-If you prefer CLI deployment, use the included `app.yaml`:
+On the environment variables page, add the following secrets:
 
-```bash
-doctl apps create --spec app.yaml
+| Variable | Value | Where to get it |
+|----------|-------|----------------|
+| `DISCORD_BOT_TOKEN` | Your Discord bot token | [Discord Developer Portal](https://discord.com/developers/applications) - see [SETUP_DISCORD.md](SETUP_DISCORD.md) |
+| `SPOTIFY_CLIENT_ID` | Your Spotify client ID | [Spotify Dashboard](https://developer.spotify.com/dashboard) - see [SETUP_SPOTIFY.md](SETUP_SPOTIFY.md) |
+| `SPOTIFY_CLIENT_SECRET` | Your Spotify client secret | [Spotify Dashboard](https://developer.spotify.com/dashboard) - see [SETUP_SPOTIFY.md](SETUP_SPOTIFY.md) |
+
+**Note:** `SPOTIFY_REDIRECT_URI` and other variables are automatically configured.
+
+### 4. Deploy the App
+
+1. Review the configuration
+2. Click **"Create Resources"**
+3. Wait for the deployment to complete (2-3 minutes)
+4. DigitalOcean will provide you with a public URL like: `https://jambot-xxxxx.ondigitalocean.app`
+
+### 5. Complete Spotify Setup
+
+#### Update Spotify Redirect URI
+
+1. Go to your [Spotify App Dashboard](https://developer.spotify.com/dashboard)
+2. Select your app
+3. Click **"Edit Settings"**
+4. Under **"Redirect URIs"**, add:
+   ```
+   https://your-app-url.ondigitalocean.app/callback
+   ```
+   (Replace `your-app-url` with your actual App Platform URL)
+5. Click **"Save"**
+
+#### Authenticate with Spotify
+
+1. Visit your app URL: `https://your-app-url.ondigitalocean.app`
+2. You'll see the Jambot setup page
+3. Click **"Connect with Spotify"**
+4. Log in to Spotify and authorize the app
+5. You'll be redirected back to the setup page showing "✅ Spotify Connected!"
+
+### 6. Add Bot to Discord Server
+
+1. Get your bot invite URL from the [Discord Developer Portal](https://discord.com/developers/applications)
+2. Or use this format:
+   ```
+   https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_CLIENT_ID&permissions=274878221376&scope=bot%20applications.commands
+   ```
+   (Replace `YOUR_BOT_CLIENT_ID` with your actual bot's client ID)
+3. Open the URL in your browser
+4. Select your server
+5. Click **"Authorize"**
+
+### 7. Configure Jam Leaders and Approvers
+
+1. In your Discord server, type: `/jambot-setup`
+2. Fill in the modal with:
+   - **Jam Leader User IDs**: Discord user IDs who can post setlists
+   - **Song Approver User IDs**: Discord user IDs who can approve songs
+   - **Playlist Channel ID** (optional): Where playlists should be posted
+   - **Playlist Name Template** (optional): e.g., `"Bluegrass Jam {date}"`
+
+**To get user IDs:**
+- Use `/jambot-getid @username` command
+- Or enable Developer Mode in Discord and right-click → Copy ID
+
+### 8. Test the Bot
+
+1. Post a test setlist in Discord:
+   ```
+   Here's the setlist for tonight's jam:
+
+   Will the Circle (G)
+   Little Georgia Rose (A)
+   Wabash Cannonball (G)
+   ```
+
+2. The bot should:
+   - Detect the setlist
+   - Search for songs on Spotify
+   - Send approval requests for ambiguous songs
+   - Create a Spotify playlist
+   - Post the playlist link in Discord
+
+## Costs
+
+### App Platform Pricing
+
+- **Basic Plan**: $5/month
+  - 512 MB RAM
+  - 1 vCPU
+  - Perfect for small to medium Discord servers
+
+- **Professional Plan**: Starting at $12/month
+  - More resources for larger servers
+
+[View full pricing](https://www.digitalocean.com/pricing/app-platform)
+
+### Database Storage
+
+The app uses SQLite stored in the container's filesystem. This means:
+
+- ✅ Free (included with your app)
+- ⚠️ **Data persists between deploys** (as long as the app keeps running)
+- ⚠️ **Destroying the app will delete all data**
+
+**To preserve data:**
+- Don't delete the app
+- Redeploys/updates preserve data
+- Only "Destroy App" removes data
+
+## Monitoring and Logs
+
+### View Application Logs
+
+1. Go to your app in the [App Platform Console](https://cloud.digitalocean.com/apps)
+2. Click on your **jambot** service
+3. Click **"Runtime Logs"**
+4. You'll see real-time logs of bot activity
+
+### Check Web Interface
+
+Visit your app URL to check Spotify authentication status:
+```
+https://your-app-url.ondigitalocean.app
 ```
 
-**Note**: The `app.yaml` file is already included in your project root.
+### Health Checks
 
-## Step 5: Configure Persistent Storage
-
-⚠️ **Important**: App Platform workers currently have limited persistent volume support. For production use, consider these options:
-
-### Option A: Use Managed Database (Recommended for Production)
-
-Instead of SQLite, use DigitalOcean Managed PostgreSQL:
-1. Create a managed PostgreSQL database in DigitalOcean
-2. Update the code to use PostgreSQL instead of SQLite
-3. Connection info is automatically injected as environment variables
-
-### Option B: External Storage
-
-Use DigitalOcean Spaces (S3-compatible) to periodically backup the SQLite database:
-1. App stores database in container filesystem (ephemeral)
-2. Periodic backup to Spaces
-3. Restore on startup
-
-### Option C: Persistent Volume (Limited Support)
-
-Currently, App Platform has limited support for persistent volumes on worker services. Monitor DigitalOcean's roadmap for updates.
-
-**For this project**: The bot will work without persistence initially, but song memories will be lost on restart. Consider implementing Option A or B for production.
-
-## Step 6: Configure Environment Variables
-
-Set sensitive environment variables (never commit these to version control):
-
-```bash
-# Replace APP_ID with your app ID from Step 5
-
-# Discord Configuration
-doctl apps update APP_ID --set-env DISCORD_BOT_TOKEN=your_bot_token
-doctl apps update APP_ID --set-env DISCORD_JAM_LEADER_ID=user_id
-doctl apps update APP_ID --set-env DISCORD_ADMIN_ID=user_id
-
-# Spotify Configuration
-doctl apps update APP_ID --set-env SPOTIFY_CLIENT_ID=your_client_id
-doctl apps update APP_ID --set-env SPOTIFY_CLIENT_SECRET=your_client_secret
-doctl apps update APP_ID --set-env SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
-doctl apps update APP_ID --set-env SPOTIFY_REFRESH_TOKEN=your_refresh_token
+App Platform automatically monitors your app's health at:
+```
+https://your-app-url.ondigitalocean.app/health
 ```
 
-Alternatively, use the DigitalOcean web console:
-1. Go to your app in the [DigitalOcean Control Panel](https://cloud.digitalocean.com/apps)
-2. Click **Settings** → **Environment Variables**
-3. Add each variable and value
-4. Click **Save**
-
-## Step 7: Deploy
-
-The app should deploy automatically after environment variables are set. To manually trigger a deployment:
-
-```bash
-doctl apps create-deployment APP_ID
-```
-
-Monitor the deployment:
-
-```bash
-doctl apps list-deployments APP_ID
-```
-
-## Step 8: Verify Deployment
-
-1. Check app status:
-```bash
-doctl apps get APP_ID
-```
-
-2. View logs:
-```bash
-doctl apps logs APP_ID --follow
-```
-
-3. Verify in Discord:
-   - Bot should appear online in your server
-   - Check logs for any errors
-
-## Monitoring and Maintenance
-
-### View Logs
-
-Real-time logs:
-```bash
-doctl apps logs APP_ID --follow --type RUN
-```
-
-Recent logs:
-```bash
-doctl apps logs APP_ID --tail 100
-```
-
-### View Metrics
-
-In the DigitalOcean Control Panel:
-1. Go to your app
-2. Click **Insights** tab
-3. View CPU, Memory, and Network usage
-
-### Restart the App
-
-```bash
-doctl apps update APP_ID --redeploy
-```
-
-### Update Environment Variables
-
-```bash
-doctl apps update APP_ID --set-env VARIABLE_NAME=new_value
-```
-
-### Scale Resources
-
-Edit `app.yaml` and update:
-- `instance_count`: Number of instances (1-20)
-- `instance_size_slug`: Size tier
-  - `basic-xxs`: 512MB RAM, 0.5 vCPU ($5/month)
-  - `basic-xs`: 1GB RAM, 1 vCPU ($10/month)
-  - `basic-s`: 2GB RAM, 1 vCPU ($20/month)
-
-Then update the app:
-```bash
-doctl apps update APP_ID --spec app.yaml
-```
-
-## Database Backup and Restore
-
-### Backup Database
-
-The SQLite database is stored in the persistent volume at `/app/data/jambot.db`.
-
-Option 1: Using doctl (if SSH access is available):
-```bash
-# Connect to container
-doctl apps exec APP_ID --component jambot
-
-# Copy database to your local machine
-doctl apps copy APP_ID:/app/data/jambot.db ./backup/jambot-$(date +%Y%m%d).db
-```
-
-Option 2: Via volume snapshot:
-1. In the DigitalOcean Control Panel, go to **Volumes**
-2. Find `jambot-data` volume
-3. Click **Snapshots** → **Take Snapshot**
-
-### Restore Database
-
-Option 1: Upload new database:
-```bash
-doctl apps copy ./backup/jambot.db APP_ID:/app/data/jambot.db
-doctl apps update APP_ID --redeploy
-```
-
-Option 2: From volume snapshot:
-1. Create new volume from snapshot
-2. Update `app.yaml` to use new volume
-3. Deploy updated spec
+If health checks fail, the app will automatically restart.
 
 ## Updating the Bot
 
-1. Make code changes locally
-2. Build new image:
-```bash
-docker build -t jambot:latest .
-```
+### Automatic Updates
 
-3. Tag with new version:
-```bash
-docker tag jambot:latest registry.digitalocean.com/YOUR_REGISTRY/jambot:v1.1
-docker tag jambot:latest registry.digitalocean.com/YOUR_REGISTRY/jambot:latest
-```
+If you have "Auto-Deploy" enabled:
+1. Push changes to your GitHub repository
+2. App Platform automatically rebuilds and deploys
+3. Zero downtime deployment
 
-4. Push to registry:
-```bash
-docker push registry.digitalocean.com/YOUR_REGISTRY/jambot:v1.1
-docker push registry.digitalocean.com/YOUR_REGISTRY/jambot:latest
-```
+### Manual Updates
 
-5. Trigger deployment:
-```bash
-doctl apps create-deployment APP_ID
-```
+1. Go to your app in the [App Platform Console](https://cloud.digitalocean.com/apps)
+2. Click **"Deploy"** → **"Deploy latest commit"**
+3. Wait for the deployment to complete
 
 ## Troubleshooting
 
-### App won't start
+### Bot shows offline in Discord
 
-1. Check logs:
-```bash
-doctl apps logs APP_ID --tail 100
-```
+- Check runtime logs for errors
+- Verify `DISCORD_BOT_TOKEN` is correct
+- Ensure the app is running (check App Platform dashboard)
 
-2. Common issues:
-   - Missing environment variables
-   - Invalid Discord/Spotify credentials
-   - Database permission errors
+### Spotify authentication not working
 
-### Database not persisting
+- Verify redirect URI matches in Spotify dashboard
+- Check that `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are correct
+- Visit `/` to see authentication status
+- Try re-authenticating by visiting `/auth`
 
-1. Verify volume is attached:
-```bash
-doctl apps get APP_ID
-```
+### Database issues
 
-2. Check volume mount path matches `DATABASE_PATH` in environment
+- Database is stored in `/app/data/jambot.db`
+- Data persists across deploys but not app deletion
+- Check logs for database connection errors
 
-3. Verify volume size is sufficient:
-```bash
-doctl compute volume list
-```
+### App Platform build failures
 
-### High resource usage
+- Check that all environment variables are set
+- Verify Dockerfile is valid
+- Review build logs in App Platform console
 
-1. Check metrics in DigitalOcean Console
-2. Review logs for errors or excessive API calls
-3. Consider upgrading instance size
+## Support
 
-### Bot appears offline
+For issues with:
+- **Jambot**: [GitHub Issues](https://github.com/asachs01/jambot/issues)
+- **App Platform**: [DigitalOcean Support](https://www.digitalocean.com/support)
+- **Discord API**: [Discord Developer Support](https://discord.com/developers/docs/intro)
+- **Spotify API**: [Spotify Developer Support](https://developer.spotify.com/support)
 
-1. Check logs for authentication errors
-2. Verify `DISCORD_BOT_TOKEN` is correct
-3. Ensure network connectivity (check app status)
+## Advanced Configuration
 
-### Playlist creation fails
+### Custom Domain
 
-1. Check Spotify API credentials
-2. Verify refresh token is valid
-3. Review logs for specific API errors
+1. Go to your app in App Platform
+2. Click **"Settings"** → **"Domains"**
+3. Add your custom domain
+4. Update Spotify redirect URI to use your domain
+5. Update DNS records as shown
 
-## Cost Estimation
+### Scaling
 
-With default configuration:
-- **Basic XXS instance**: $5/month (512MB RAM, 0.5 vCPU)
-- **Persistent volume (1GB)**: $0.10/month
-- **Container registry storage**: ~$0.02/month
+To handle more traffic:
+1. Go to app settings
+2. Change instance size to Professional or higher
+3. Increase instance count for high availability
 
-**Total**: ~$5.12/month
+### Environment-Specific Configuration
 
-For higher traffic:
-- Basic XS ($10/month): 1GB RAM, 1 vCPU
-- Consider multiple instances for high availability
-
-## Security Best Practices
-
-1. **Use secrets management**:
-   - Store sensitive values in DigitalOcean App Platform environment variables
-   - Never commit credentials to version control
-
-2. **Regular updates**:
-   - Keep dependencies updated
-   - Rebuild images periodically for security patches
-
-3. **Monitor logs**:
-   - Set up log alerts for errors
-   - Review logs weekly for suspicious activity
-
-4. **Backup database**:
-   - Schedule regular automated backups
-   - Test restore procedures
-
-5. **Resource limits**:
-   - Set appropriate CPU/memory limits
-   - Monitor usage and adjust as needed
-
-## Alternative Deployment Options
-
-### Docker Compose (Self-Hosted)
-
-```bash
-docker-compose up -d
-```
-
-See `docker-compose.yml` for configuration.
-
-### Other Cloud Platforms
-
-The bot can also be deployed to:
-- **AWS ECS/Fargate**: Use ECS task definition with EFS for database
-- **Google Cloud Run**: Mount Cloud Storage bucket for database
-- **Azure Container Instances**: Use Azure Files for persistent storage
-- **Heroku**: Use Heroku Postgres instead of SQLite
+Create different apps for staging/production:
+1. Use different GitHub branches
+2. Set different environment variables
+3. Use separate Discord bots and Spotify apps
 
 ## Next Steps
 
-- [Review admin workflow](ADMIN_GUIDE.md)
-- [Check troubleshooting guide](TROUBLESHOOTING.md)
-- [Set up monitoring and alerts](#monitoring-and-maintenance)
-
-## Support Resources
-
-- [DigitalOcean App Platform Documentation](https://docs.digitalocean.com/products/app-platform/)
-- [doctl Reference](https://docs.digitalocean.com/reference/doctl/)
-- [DigitalOcean Community](https://www.digitalocean.com/community/tags/app-platform)
+- [Configure Discord Bot](SETUP_DISCORD.md)
+- [Set up Spotify Integration](SETUP_SPOTIFY.md)
+- [Read the User Guide](README.md)
+- [Troubleshooting Guide](TROUBLESHOOTING.md)
