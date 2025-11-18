@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Guide – JamBot Documentation</title>
+    <meta name="description" content="Complete guide for using JamBot's approval workflow and managing playlists.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --orange: #C86A2A;
+            --orange-dark: #A0501E;
+            --brown: #3B2618;
+            --cream: #F2E3C8;
+            --green: #1DB954;
+            --tan: #8B5E3C;
+            --light-orange: #FFD18A;
+        }
+
+        body {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--brown);
+            line-height: 1.7;
+            font-size: 18px;
+            background: white;
+        }
+
+        /* Header */
+        .header {
+            background: var(--orange);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            text-decoration: none;
+            color: white;
+        }
+
+        .header-brand img {
+            width: 40px;
+            height: 40px;
+        }
+
+        .header-brand h1 {
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .header-nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 32px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .header-nav a:hover {
+            opacity: 0.8;
+        }
+
+        /* Main Layout */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 60px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: sticky;
+            top: 40px;
+            height: fit-content;
+        }
+
+        .sidebar h3 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--tan);
+            margin-bottom: 16px;
+        }
+
+        .sidebar ul {
+            list-style: none;
+        }
+
+        .sidebar li {
+            margin-bottom: 8px;
+        }
+
+        .sidebar a {
+            color: var(--brown);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+            display: block;
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+
+        .sidebar a:hover {
+            background: var(--cream);
+            color: var(--orange);
+        }
+
+        .sidebar a.active {
+            background: var(--orange);
+            color: white;
+        }
+
+        /* Content */
+        .content {
+            max-width: 800px;
+        }
+
+        .content h1 {
+            font-size: 42px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h2 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-top: 48px;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            color: var(--brown);
+        }
+
+        .content h4 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            color: var(--brown);
+        }
+
+        .content p {
+            margin-bottom: 16px;
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 16px;
+            padding-left: 32px;
+        }
+
+        .content li {
+            margin-bottom: 8px;
+        }
+
+        .content a {
+            color: var(--orange);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        /* Code blocks */
+        .content code {
+            background: var(--cream);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Fira Code', monospace;
+            font-size: 16px;
+            color: var(--orange-dark);
+        }
+
+        .content pre {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 24px;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: var(--cream);
+            font-size: 14px;
+        }
+
+        /* Alert boxes */
+        .alert {
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: #E3F2FD;
+            border-color: #2196F3;
+            color: #0D47A1;
+        }
+
+        .alert-warning {
+            background: #FFF3E0;
+            border-color: #FF9800;
+            color: #E65100;
+        }
+
+        .alert-success {
+            background: #E8F5E9;
+            border-color: #4CAF50;
+            color: #1B5E20;
+        }
+
+        .step-badge {
+            display: inline-block;
+            background: var(--orange);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: 800;
+            margin-right: 8px;
+        }
+
+        .reaction-type {
+            display: inline-block;
+            background: var(--green);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 700;
+            margin-right: 8px;
+        }
+
+        .example-box {
+            background: var(--cream);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border-left: 4px solid var(--orange);
+        }
+
+        /* Footer */
+        footer {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 40px 0;
+            margin-top: 80px;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            text-align: center;
+        }
+
+        .footer-content a {
+            color: var(--light-orange);
+            text-decoration: none;
+            margin: 0 16px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+            }
+
+            .header-nav {
+                display: none;
+            }
+
+            .content h1 {
+                font-size: 32px;
+            }
+
+            .content h2 {
+                font-size: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="../index.html" class="header-brand">
+                <img src="../assets/icon.png" alt="JamBot">
+                <h1>JamBot Docs</h1>
+            </a>
+            <nav class="header-nav">
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <h3>Documentation</h3>
+            <ul>
+                <li><a href="setup.html">Setup Guide</a></li>
+                <li><a href="configuration.html">Configuration</a></li>
+                <li><a href="deployment.html">Deployment</a></li>
+                <li><a href="admin-guide.html" class="active">Admin Guide</a></li>
+                <li><a href="troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+        </aside>
+
+        <!-- Content -->
+        <main class="content">
+            <h1>Admin Guide</h1>
+            <p>This guide explains how to use JamBot's approval workflow for validating song selections and creating Spotify playlists.</p>
+
+            <h2>Overview</h2>
+            <p>As a designated approver, you'll receive Direct Messages (DMs) from JamBot whenever a setlist is detected. You'll review and approve song selections before the playlist is created.</p>
+
+            <h2>Workflow Steps</h2>
+
+            <h3><span class="step-badge">1</span>Setlist Detection</h3>
+            <p>When a jam leader posts a setlist message, JamBot:</p>
+            <ol>
+                <li>Detects and parses the message</li>
+                <li>Searches for each song on Spotify or checks the database</li>
+                <li>Sends you a DM with all song matches</li>
+            </ol>
+
+            <h3><span class="step-badge">2</span>Review Song Matches</h3>
+            <p>You'll receive a DM with an embedded message for each song. There are four types of matches:</p>
+
+            <h4><span class="reaction-type">✅</span>Pre-Approved Songs</h4>
+            <p>Songs previously approved and stored in the database:</p>
+
+            <div class="example-box">
+                <strong>1. Will the Circle Be Unbroken</strong><br>
+                ✅ Stored Version (Pre-approved)<br><br>
+                <strong>Track:</strong> Will the Circle Be Unbroken<br>
+                <strong>Artist:</strong> The Nitty Gritty Dirt Band<br>
+                <strong>Album:</strong> Will the Circle Be Unbroken<br>
+                [Spotify Link]
+            </div>
+
+            <p><strong>What to do:</strong></p>
+            <ul>
+                <li>The stored version is automatically selected</li>
+                <li>React with ✅ if you're happy with it</li>
+                <li>To change it, search Spotify manually and reply with a different track link</li>
+            </ul>
+
+            <h4><span class="reaction-type">✅</span>Single Match Found</h4>
+            <p>When JamBot finds exactly one match:</p>
+
+            <div class="example-box">
+                <strong>2. Blue Moon of Kentucky</strong><br>
+                ✅ 1 match found - React to approve<br><br>
+                <strong>Track:</strong> Blue Moon of Kentucky<br>
+                <strong>Artist:</strong> Bill Monroe<br>
+                <strong>Album:</strong> The Essential Bill Monroe<br>
+                [Spotify Link]
+            </div>
+
+            <p><strong>What to do:</strong></p>
+            <ul>
+                <li>React with ✅ to approve this version</li>
+                <li>Or reply with a different Spotify track link if you prefer another version</li>
+            </ul>
+
+            <h4><span class="reaction-type">1️⃣ 2️⃣ 3️⃣</span>Multiple Matches Found</h4>
+            <p>When JamBot finds multiple options:</p>
+
+            <div class="example-box">
+                <strong>3. Man of Constant Sorrow</strong><br>
+                🎵 3 matches found - React to select<br><br>
+
+                <strong>1️⃣ Option 1</strong><br>
+                I Am a Man of Constant Sorrow<br>
+                Stanley Brothers - The Complete Mercury Recordings<br>
+                [Link]<br><br>
+
+                <strong>2️⃣ Option 2</strong><br>
+                Man of Constant Sorrow<br>
+                Soggy Bottom Boys - O Brother, Where Art Thou?<br>
+                [Link]<br><br>
+
+                <strong>3️⃣ Option 3</strong><br>
+                Man of Constant Sorrow<br>
+                Norman Blake - Whiskey Before Breakfast<br>
+                [Link]
+            </div>
+
+            <p><strong>What to do:</strong></p>
+            <ul>
+                <li>React with 1️⃣, 2️⃣, or 3️⃣ to select your preferred version</li>
+                <li>Or reply with a Spotify track link for a different version</li>
+            </ul>
+
+            <h4><span class="reaction-type">❌</span>No Match Found</h4>
+            <p>When JamBot can't find the song:</p>
+
+            <div class="example-box">
+                <strong>4. Some Obscure Traditional Song</strong><br>
+                ❌ No matches found<br>
+                Reply with Spotify track link to add manually.
+            </div>
+
+            <p><strong>What to do:</strong></p>
+            <ul>
+                <li>Search Spotify manually for the song</li>
+                <li>Copy the track's Spotify link</li>
+                <li>Reply to the DM with the link</li>
+            </ul>
+
+            <h3><span class="step-badge">3</span>Provide Manual Links</h3>
+            <p>To manually add a song version, reply to the DM with a Spotify track link:</p>
+
+            <pre><code>https://open.spotify.com/track/TRACK_ID_HERE</code></pre>
+
+            <p>JamBot will:</p>
+            <ul>
+                <li>Validate the link</li>
+                <li>Extract track information</li>
+                <li>Confirm the selection</li>
+                <li>Use this version for the playlist</li>
+            </ul>
+
+            <h3><span class="step-badge">4</span>Final Approval</h3>
+            <p>After reviewing all songs, you'll receive a summary message:</p>
+
+            <div class="example-box">
+                ✅ Review complete! React with ✅ to create the playlist or ❌ to cancel.
+            </div>
+
+            <p><strong>What to do:</strong></p>
+            <ul>
+                <li>React with ✅ to create the Spotify playlist</li>
+                <li>React with ❌ to cancel (no playlist will be created)</li>
+            </ul>
+
+            <h3><span class="step-badge">5</span>Playlist Creation</h3>
+            <p>Once you approve:</p>
+            <ol>
+                <li>JamBot creates a Spotify playlist named "Bluegrass Jam [DATE]"</li>
+                <li>Adds all approved tracks in setlist order</li>
+                <li>Posts the playlist link to the Discord channel</li>
+                <li>Stores the song versions in the database for future jams</li>
+                <li>Sends you a confirmation DM</li>
+            </ol>
+
+            <div class="alert alert-success">
+                <strong>✅ Playlist Created!</strong> The playlist is now ready for your jam session.
+            </div>
+
+            <h2>Manual Song Management</h2>
+
+            <h3>Override a Song After Approval</h3>
+            <p>Use this command in any channel where JamBot is present:</p>
+
+            <pre><code>@jambot use this version of Will the Circle Be Unbroken for 11/18/2024 https://open.spotify.com/track/TRACK_ID</code></pre>
+
+            <p>This will:</p>
+            <ul>
+                <li>Update the song in the pending setlist (before playlist creation)</li>
+                <li>Store this version as the preferred version for future jams</li>
+                <li>Confirm the change via DM</li>
+            </ul>
+
+            <h3>Find a Spotify Track Link</h3>
+            <ol>
+                <li>Open Spotify (desktop, web, or mobile)</li>
+                <li>Find the song you want</li>
+                <li>Click the three dots (•••) next to the song</li>
+                <li>Select <strong>"Share"</strong> → <strong>"Copy Song Link"</strong></li>
+                <li>Paste the link in your DM to JamBot</li>
+            </ol>
+
+            <div class="alert alert-info">
+                <strong>Example link format:</strong><br>
+                <code>https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6</code>
+            </div>
+
+            <h2>Best Practices</h2>
+
+            <h3>Song Selection</h3>
+            <ol>
+                <li><strong>Consistency:</strong> Use the same version of a song across jams when possible
+                    <ul>
+                        <li>JamBot remembers your choices</li>
+                        <li>Pre-approved versions make future approvals faster</li>
+                    </ul>
+                </li>
+                <li><strong>Quality:</strong> Choose official releases over covers when available
+                    <ul>
+                        <li>Check the artist and album names</li>
+                        <li>Verify it's the right tempo/style for your jam</li>
+                    </ul>
+                </li>
+                <li><strong>Availability:</strong> Ensure tracks are available in your region
+                    <ul>
+                        <li>Some tracks may be region-locked</li>
+                        <li>Test the link before approving</li>
+                    </ul>
+                </li>
+            </ol>
+
+            <h3>Handling Edge Cases</h3>
+
+            <h4>Song not on Spotify</h4>
+            <ul>
+                <li>If a traditional song isn't available, pick the closest version</li>
+                <li>Or skip it (don't react) and add it manually to the playlist later</li>
+            </ul>
+
+            <h4>Wrong song detected</h4>
+            <ul>
+                <li>Reply with the correct Spotify link</li>
+                <li>JamBot will use your manual selection</li>
+            </ul>
+
+            <h4>Multiple jams on same day</h4>
+            <ul>
+                <li>Playlists are named by date, which could conflict</li>
+                <li>Consider editing the playlist name in Spotify after creation</li>
+            </ul>
+
+            <h2>Privacy Settings</h2>
+            <p>To receive DMs from JamBot:</p>
+            <ol>
+                <li>Open Discord User Settings (gear icon)</li>
+                <li>Go to <strong>Privacy & Safety</strong></li>
+                <li>Enable <strong>"Allow direct messages from server members"</strong></li>
+                <li>Make sure you share a server with JamBot</li>
+            </ol>
+
+            <h2>Complete Workflow Example</h2>
+
+            <h3>1. Jam Leader Posts Setlist</h3>
+            <pre><code>Here's the upcoming setlist for the 7pm jam on November 18, 2024.
+If you want to sing any of these, please let me know or comment below.
+
+1. Will the Circle Be Unbroken (G)
+2. Blue Moon of Kentucky (F)
+3. Man of Constant Sorrow (A)</code></pre>
+
+            <h3>2. You Receive DM</h3>
+            <p>JamBot sends you three messages:</p>
+
+            <p><strong>Message 1:</strong> (Stored version)<br>
+            → You react with ✅</p>
+
+            <p><strong>Message 2:</strong> (Single match)<br>
+            → You react with ✅</p>
+
+            <p><strong>Message 3:</strong> (Multiple matches)<br>
+            → You react with 2️⃣ (you prefer the Soggy Bottom Boys version)</p>
+
+            <h3>3. Summary & Final Approval</h3>
+            <p>→ You react with ✅</p>
+
+            <h3>4. Confirmation</h3>
+            <p>JamBot sends you a confirmation and posts the playlist link in Discord.</p>
+
+            <div class="alert alert-success">
+                <strong>🎉 Done!</strong> The playlist is ready for the jam.
+            </div>
+
+            <h2>Tips for Efficiency</h2>
+            <ul>
+                <li>Enable Discord notifications for JamBot DMs</li>
+                <li>Keep Spotify open to preview tracks quickly</li>
+                <li>Use keyboard shortcuts: <code>+</code> to add reaction, <code>ESC</code> to cancel</li>
+                <li>Build a mental library of preferred versions</li>
+                <li>Most songs will use stored versions after the first jam</li>
+            </ul>
+
+            <h2>Next Steps</h2>
+            <ul>
+                <li><a href="troubleshooting.html">Troubleshooting common issues</a></li>
+                <li><a href="configuration.html">Update jam leaders and approvers</a></li>
+                <li><a href="https://github.com/asachs01/jambot/issues">Report issues on GitHub</a></li>
+            </ul>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <p>
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </p>
+            <p style="margin-top: 16px; opacity: 0.8;">© 2025 JamBot • Made with ❤️ for bluegrass communities</p>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration Guide – JamBot Documentation</title>
+    <meta name="description" content="Complete configuration guide for JamBot - Setting up jam leaders and approvers.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --orange: #C86A2A;
+            --orange-dark: #A0501E;
+            --brown: #3B2618;
+            --cream: #F2E3C8;
+            --green: #1DB954;
+            --tan: #8B5E3C;
+            --light-orange: #FFD18A;
+        }
+
+        body {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--brown);
+            line-height: 1.7;
+            font-size: 18px;
+            background: white;
+        }
+
+        /* Header */
+        .header {
+            background: var(--orange);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            text-decoration: none;
+            color: white;
+        }
+
+        .header-brand img {
+            width: 40px;
+            height: 40px;
+        }
+
+        .header-brand h1 {
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .header-nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 32px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .header-nav a:hover {
+            opacity: 0.8;
+        }
+
+        /* Main Layout */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 60px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: sticky;
+            top: 40px;
+            height: fit-content;
+        }
+
+        .sidebar h3 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--tan);
+            margin-bottom: 16px;
+        }
+
+        .sidebar ul {
+            list-style: none;
+        }
+
+        .sidebar li {
+            margin-bottom: 8px;
+        }
+
+        .sidebar a {
+            color: var(--brown);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+            display: block;
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+
+        .sidebar a:hover {
+            background: var(--cream);
+            color: var(--orange);
+        }
+
+        .sidebar a.active {
+            background: var(--orange);
+            color: white;
+        }
+
+        /* Content */
+        .content {
+            max-width: 800px;
+        }
+
+        .content h1 {
+            font-size: 42px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h2 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-top: 48px;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            color: var(--brown);
+        }
+
+        .content h4 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            color: var(--brown);
+        }
+
+        .content p {
+            margin-bottom: 16px;
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 16px;
+            padding-left: 32px;
+        }
+
+        .content li {
+            margin-bottom: 8px;
+        }
+
+        .content a {
+            color: var(--orange);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        /* Code blocks */
+        .content code {
+            background: var(--cream);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Fira Code', monospace;
+            font-size: 16px;
+            color: var(--orange-dark);
+        }
+
+        .content pre {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 24px;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: var(--cream);
+            font-size: 14px;
+        }
+
+        /* Alert boxes */
+        .alert {
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: #E3F2FD;
+            border-color: #2196F3;
+            color: #0D47A1;
+        }
+
+        .alert-warning {
+            background: #FFF3E0;
+            border-color: #FF9800;
+            color: #E65100;
+        }
+
+        .alert-success {
+            background: #E8F5E9;
+            border-color: #4CAF50;
+            color: #1B5E20;
+        }
+
+        .method-badge {
+            display: inline-block;
+            background: var(--green);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-right: 8px;
+        }
+
+        .legacy-badge {
+            display: inline-block;
+            background: var(--tan);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-right: 8px;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 40px 0;
+            margin-top: 80px;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            text-align: center;
+        }
+
+        .footer-content a {
+            color: var(--light-orange);
+            text-decoration: none;
+            margin: 0 16px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+            }
+
+            .header-nav {
+                display: none;
+            }
+
+            .content h1 {
+                font-size: 32px;
+            }
+
+            .content h2 {
+                font-size: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="../index.html" class="header-brand">
+                <img src="../assets/icon.png" alt="JamBot">
+                <h1>JamBot Docs</h1>
+            </a>
+            <nav class="header-nav">
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <h3>Documentation</h3>
+            <ul>
+                <li><a href="setup.html">Setup Guide</a></li>
+                <li><a href="configuration.html" class="active">Configuration</a></li>
+                <li><a href="deployment.html">Deployment</a></li>
+                <li><a href="admin-guide.html">Admin Guide</a></li>
+                <li><a href="troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+        </aside>
+
+        <!-- Content -->
+        <main class="content">
+            <h1>Configuration Guide</h1>
+            <p>JamBot supports two configuration methods: modal-based configuration through Discord (recommended) and legacy environment variables.</p>
+
+            <h2><span class="method-badge">Recommended</span>Modal-Based Configuration</h2>
+            <p>Configure JamBot directly through Discord slash commands - no server restart required!</p>
+
+            <h3>Step 1: Get User IDs</h3>
+            <p>First, you'll need to get the Discord user IDs for your jam leaders and approvers. Use the <code>/jambot-getid</code> command:</p>
+
+            <pre><code>/jambot-getid @username</code></pre>
+
+            <p>This will display the user's unique Discord ID. Copy this ID for the next step.</p>
+
+            <h3>Step 2: Configure JamBot</h3>
+            <p>Server administrators can open the configuration modal with the <code>/jambot-setup</code> command:</p>
+
+            <pre><code>/jambot-setup</code></pre>
+
+            <p>This opens a modal with two fields:</p>
+
+            <ul>
+                <li><strong>Jam Leader User IDs</strong> - Users who can post setlists (comma-separated)</li>
+                <li><strong>Song Approver User IDs</strong> - Users who can approve songs (comma-separated)</li>
+            </ul>
+
+            <div class="alert alert-info">
+                <strong>Example Configuration:</strong><br>
+                Jam Leaders: <code>123456789012345678, 987654321098765432</code><br>
+                Approvers: <code>111222333444555666, 777888999000111222</code>
+            </div>
+
+            <h3>Features</h3>
+            <ul>
+                <li>✅ <strong>Multiple Users</strong> - Support for multiple jam leaders and approvers</li>
+                <li>✅ <strong>Real-Time Validation</strong> - IDs are validated immediately</li>
+                <li>✅ <strong>Per-Server Storage</strong> - Configuration stored in database per Discord server</li>
+                <li>✅ <strong>No Restart Required</strong> - Changes take effect immediately</li>
+                <li>✅ <strong>Admin-Only</strong> - Only administrators can modify configuration</li>
+            </ul>
+
+            <h2>Permissions</h2>
+            <p>Only users with <strong>Administrator</strong> permissions in the Discord server can run <code>/jambot-setup</code>. This prevents unauthorized users from changing who can post setlists or approve songs.</p>
+
+            <h2>How It Works</h2>
+
+            <ol>
+                <li><strong>Jam Leaders</strong> post setlist messages that JamBot detects and processes</li>
+                <li><strong>Approvers</strong> receive DM workflows to approve songs and create Spotify playlists</li>
+                <li>When a jam leader posts a setlist:
+                    <ul>
+                        <li>JamBot detects and parses the message</li>
+                        <li>Searches for each song on Spotify</li>
+                        <li>Sends approval workflow to ALL configured approvers</li>
+                        <li>Creates playlist when approved</li>
+                    </ul>
+                </li>
+            </ol>
+
+            <h2><span class="legacy-badge">Legacy</span>Environment Variables</h2>
+            <p>You can still use environment variables for initial configuration or as a fallback:</p>
+
+            <pre><code># .env file
+DISCORD_JAM_LEADER_ID="123456789012345678"
+DISCORD_ADMIN_ID="987654321098765432"</code></pre>
+
+            <div class="alert alert-warning">
+                <strong>⚠️ Note:</strong> Database configuration takes precedence over environment variables. The bot will only use environment variables if no configuration exists in the database.
+            </div>
+
+            <h2>Database Storage</h2>
+            <p>Configuration is stored in the SQLite database in the <code>bot_configuration</code> table:</p>
+
+            <pre><code>CREATE TABLE bot_configuration (
+    id INTEGER PRIMARY KEY,
+    guild_id INTEGER UNIQUE NOT NULL,
+    jam_leader_ids TEXT NOT NULL,      -- JSON array
+    approver_ids TEXT NOT NULL,        -- JSON array
+    updated_at TIMESTAMP NOT NULL,
+    updated_by INTEGER NOT NULL
+);</code></pre>
+
+            <h2>Migration from Environment Variables</h2>
+            <p>If you're currently using environment variables:</p>
+
+            <ol>
+                <li>Keep your <code>.env</code> file as-is for bot token and Spotify credentials</li>
+                <li>Run <code>/jambot-setup</code> in your Discord server to configure jam leaders and approvers</li>
+                <li>The bot will now use the database configuration</li>
+                <li>You can optionally remove <code>DISCORD_JAM_LEADER_ID</code> and <code>DISCORD_ADMIN_ID</code> from <code>.env</code></li>
+            </ol>
+
+            <h2>Examples</h2>
+
+            <h3>Configure Multiple Jam Leaders</h3>
+            <p>If you have 3 people who post setlists:</p>
+
+            <ol>
+                <li>Get each person's ID using <code>/jambot-getid</code> for each person</li>
+                <li>Run <code>/jambot-setup</code></li>
+                <li>Enter the IDs separated by commas: <code>123456789, 234567890, 345678901</code></li>
+            </ol>
+
+            <h3>Configure Multiple Approvers</h3>
+            <p>If you want 2 people to approve songs:</p>
+
+            <ol>
+                <li>Get their IDs using <code>/jambot-getid</code></li>
+                <li>Run <code>/jambot-setup</code></li>
+                <li>Enter the IDs separated by commas: <code>111222333, 444555666</code></li>
+            </ol>
+
+            <h2>Best Practices</h2>
+
+            <ul>
+                <li><strong>Have at least 2 approvers</strong> for redundancy in case one is unavailable</li>
+                <li><strong>Test the configuration</strong> by posting a test setlist after setup</li>
+                <li><strong>Keep your .env file secure</strong> - it still contains sensitive Spotify credentials</li>
+                <li><strong>Regularly review access</strong> - periodically check who has jam leader and approver permissions</li>
+            </ul>
+
+            <h2>Troubleshooting</h2>
+
+            <h3>"You need administrator permissions to use this command"</h3>
+            <ul>
+                <li>Make sure you have the Administrator role in your Discord server</li>
+                <li>Check your server role settings in Server Settings → Roles</li>
+            </ul>
+
+            <h3>"The following user IDs are invalid..."</h3>
+            <ul>
+                <li>Verify the user IDs are correct (18-19 digit numbers)</li>
+                <li>Make sure the users are members of your Discord server</li>
+                <li>Use <code>/jambot-getid @username</code> to get the correct ID</li>
+            </ul>
+
+            <h3>"No approvers configured for this guild"</h3>
+            <ul>
+                <li>Run <code>/jambot-setup</code> to configure approvers</li>
+                <li>Make sure you entered at least one approver ID</li>
+                <li>Verify the configuration saved successfully</li>
+            </ul>
+
+            <h3>Configuration not taking effect</h3>
+            <ul>
+                <li>Try re-running <code>/jambot-setup</code> to update the configuration</li>
+                <li>Check the bot logs for any error messages in <code>/app/logs/jambot.log</code></li>
+                <li>Verify the database file exists and is writable</li>
+                <li>Restart the bot if changes still don't take effect</li>
+            </ul>
+
+            <div class="alert alert-info">
+                <strong>💡 Need more help?</strong> Check the <a href="troubleshooting.html">Troubleshooting Guide</a> or visit our <a href="https://github.com/asachs01/jambot/issues">GitHub Support</a>.
+            </div>
+
+            <h2>Next Steps</h2>
+            <ul>
+                <li><a href="admin-guide.html">Learn how to use the approval workflow</a></li>
+                <li><a href="deployment.html">Deploy to DigitalOcean</a></li>
+                <li><a href="troubleshooting.html">Troubleshooting common issues</a></li>
+            </ul>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <p>
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </p>
+            <p style="margin-top: 16px; opacity: 0.8;">© 2025 JamBot • Made with ❤️ for bluegrass communities</p>
+        </div>
+    </footer>
+</body>
+</html>

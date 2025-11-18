@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Troubleshooting – JamBot Documentation</title>
+    <meta name="description" content="Troubleshooting guide for common JamBot issues and solutions.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --orange: #C86A2A;
+            --orange-dark: #A0501E;
+            --brown: #3B2618;
+            --cream: #F2E3C8;
+            --green: #1DB954;
+            --tan: #8B5E3C;
+            --light-orange: #FFD18A;
+        }
+
+        body {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--brown);
+            line-height: 1.7;
+            font-size: 18px;
+            background: white;
+        }
+
+        /* Header */
+        .header {
+            background: var(--orange);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            text-decoration: none;
+            color: white;
+        }
+
+        .header-brand img {
+            width: 40px;
+            height: 40px;
+        }
+
+        .header-brand h1 {
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .header-nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 32px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .header-nav a:hover {
+            opacity: 0.8;
+        }
+
+        /* Main Layout */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 60px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: sticky;
+            top: 40px;
+            height: fit-content;
+        }
+
+        .sidebar h3 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--tan);
+            margin-bottom: 16px;
+        }
+
+        .sidebar ul {
+            list-style: none;
+        }
+
+        .sidebar li {
+            margin-bottom: 8px;
+        }
+
+        .sidebar a {
+            color: var(--brown);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+            display: block;
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+
+        .sidebar a:hover {
+            background: var(--cream);
+            color: var(--orange);
+        }
+
+        .sidebar a.active {
+            background: var(--orange);
+            color: white;
+        }
+
+        /* Content */
+        .content {
+            max-width: 800px;
+        }
+
+        .content h1 {
+            font-size: 42px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h2 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-top: 48px;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            color: var(--brown);
+        }
+
+        .content h4 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            color: var(--brown);
+        }
+
+        .content p {
+            margin-bottom: 16px;
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 16px;
+            padding-left: 32px;
+        }
+
+        .content li {
+            margin-bottom: 8px;
+        }
+
+        .content a {
+            color: var(--orange);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        /* Code blocks */
+        .content code {
+            background: var(--cream);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Fira Code', monospace;
+            font-size: 16px;
+            color: var(--orange-dark);
+        }
+
+        .content pre {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 24px;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: var(--cream);
+            font-size: 14px;
+        }
+
+        /* Alert boxes */
+        .alert {
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: #E3F2FD;
+            border-color: #2196F3;
+            color: #0D47A1;
+        }
+
+        .alert-warning {
+            background: #FFF3E0;
+            border-color: #FF9800;
+            color: #E65100;
+        }
+
+        .alert-success {
+            background: #E8F5E9;
+            border-color: #4CAF50;
+            color: #1B5E20;
+        }
+
+        .alert-danger {
+            background: #FFEBEE;
+            border-color: #F44336;
+            color: #C62828;
+        }
+
+        .step-badge {
+            display: inline-block;
+            background: var(--orange);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: 800;
+            margin-right: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 24px;
+        }
+
+        table th,
+        table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--cream);
+        }
+
+        table th {
+            background: var(--cream);
+            font-weight: 700;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 40px 0;
+            margin-top: 80px;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            text-align: center;
+        }
+
+        .footer-content a {
+            color: var(--light-orange);
+            text-decoration: none;
+            margin: 0 16px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+            }
+
+            .header-nav {
+                display: none;
+            }
+
+            .content h1 {
+                font-size: 32px;
+            }
+
+            .content h2 {
+                font-size: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="../index.html" class="header-brand">
+                <img src="../assets/icon.png" alt="JamBot">
+                <h1>JamBot Docs</h1>
+            </a>
+            <nav class="header-nav">
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <h3>Documentation</h3>
+            <ul>
+                <li><a href="setup.html">Setup Guide</a></li>
+                <li><a href="configuration.html">Configuration</a></li>
+                <li><a href="deployment.html">Deployment</a></li>
+                <li><a href="admin-guide.html">Admin Guide</a></li>
+                <li><a href="troubleshooting.html" class="active">Troubleshooting</a></li>
+            </ul>
+        </aside>
+
+        <!-- Content -->
+        <main class="content">
+            <h1>Troubleshooting Guide</h1>
+            <p>This guide covers common issues with JamBot and their solutions.</p>
+
+            <div class="alert alert-info">
+                <strong>💡 Quick Help:</strong> Most issues are caused by missing Message Content Intent in Discord Developer Portal. Check that first!
+            </div>
+
+            <h2>🔍 Quick Diagnosis: Bot Not Detecting Messages</h2>
+            <p>If your bot is <strong>online</strong> but <strong>not responding</strong> to messages, work through these steps in order:</p>
+
+            <h3><span class="step-badge">1</span>Verify Message Content Intent</h3>
+            <div class="alert alert-danger">
+                <strong>⚠️ MOST COMMON ISSUE!</strong> This is the #1 reason bots don't detect messages.
+            </div>
+
+            <ol>
+                <li>Go to <a href="https://discord.com/developers/applications" target="_blank">Discord Developer Portal</a></li>
+                <li>Select your JamBot application</li>
+                <li>Click <strong>"Bot"</strong> in the left sidebar</li>
+                <li>Scroll down to <strong>"Privileged Gateway Intents"</strong></li>
+                <li>Ensure <strong>"Message Content Intent"</strong> is toggled <strong>ON</strong> (should be blue)</li>
+                <li>If you made a change, click <strong>"Save Changes"</strong></li>
+                <li><strong>Restart your bot:</strong>
+                    <pre><code>docker compose down
+docker compose up -d</code></pre>
+                </li>
+            </ol>
+
+            <h3><span class="step-badge">2</span>Verify Your User ID</h3>
+            <p>The bot is configured to only respond to specific jam leader user IDs.</p>
+
+            <p><strong>To check your actual user ID:</strong></p>
+            <ol>
+                <li>Enable Developer Mode in Discord: Settings → Advanced → Developer Mode ON</li>
+                <li>Right-click your username anywhere</li>
+                <li>Click "Copy User ID"</li>
+                <li>Note your user ID (it will be a long number like <code>123456789012345678</code>)</li>
+            </ol>
+
+            <p><strong>If the bot isn't responding:</strong></p>
+            <ul>
+                <li>You may not be configured as a jam leader</li>
+                <li>Use <code>/jambot-setup</code> to add yourself as a jam leader</li>
+                <li>Or check that the <code>.env</code> file has the correct <code>DISCORD_JAM_LEADER_ID</code></li>
+            </ul>
+
+            <h3><span class="step-badge">3</span>Verify Bot Can See the Channel</h3>
+            <ol>
+                <li>Look at the member list on the right side of the channel</li>
+                <li>Find <strong>jambot</strong> in the list</li>
+                <li>If the bot isn't there:
+                    <ul>
+                        <li>Right-click the channel → Edit Channel → Permissions</li>
+                        <li>Add jambot</li>
+                        <li>Enable "View Channel" permission</li>
+                    </ul>
+                </li>
+            </ol>
+
+            <h3><span class="step-badge">4</span>Test Message Format</h3>
+            <p>Use this exact test message (you can modify the date/time):</p>
+
+            <pre><code>Here's the setlist for the 7pm jam on November 20th.
+
+1. Will the Circle Be Unbroken
+2. Rocky Top
+3. Man of Constant Sorrow</code></pre>
+
+            <div class="alert alert-warning">
+                <strong>Critical Requirements:</strong>
+                <ul>
+                    <li>Line 1 must contain: <code>here's the setlist for the [TIME] jam on [DATE].</code></li>
+                    <li>There must be a <strong>period (.)</strong> after the date</li>
+                    <li>Songs must be numbered: <code>1. Song Title</code></li>
+                    <li>Post from a jam leader account (configured via <code>/jambot-setup</code> or <code>.env</code>)</li>
+                </ul>
+            </div>
+
+            <h3><span class="step-badge">5</span>Check the Logs</h3>
+            <p>Watch the logs in real-time:</p>
+
+            <pre><code>docker compose logs -f</code></pre>
+
+            <p><strong>If working correctly, you should see:</strong></p>
+            <pre><code>jambot | INFO - Received message from &lt;your name&gt; (ID: YOUR_USER_ID)
+jambot | INFO - Message content preview: Here's the setlist for the 7pm jam...
+jambot | INFO - Detected setlist message from jam leader in channel 123456789</code></pre>
+
+            <p><strong>Diagnosis based on what you see:</strong></p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>What You See</th>
+                        <th>Problem</th>
+                        <th>Solution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>No "Received message" logs at all</td>
+                        <td>Message Content Intent not enabled</td>
+                        <td>Go back to Step 1</td>
+                    </tr>
+                    <tr>
+                        <td>"Received message" but wrong user ID</td>
+                        <td>Not configured as jam leader</td>
+                        <td>Use <code>/jambot-setup</code> to add yourself</td>
+                    </tr>
+                    <tr>
+                        <td>"Received message" with correct ID but no "Detected setlist"</td>
+                        <td>Message format wrong</td>
+                        <td>Check message against Step 4 requirements</td>
+                    </tr>
+                    <tr>
+                        <td>"Detected setlist message"</td>
+                        <td>✅ Working!</td>
+                        <td>Bot should now send you a DM</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>Bot Status Issues</h2>
+
+            <h3>Bot shows as offline</h3>
+            <p><strong>Symptoms:</strong> Bot appears offline in Discord server</p>
+
+            <p><strong>Possible Causes:</strong></p>
+            <ol>
+                <li>Bot process isn't running</li>
+                <li>Invalid Discord token</li>
+                <li>Network connectivity issues</li>
+            </ol>
+
+            <p><strong>Solutions:</strong></p>
+            <pre><code># Check logs for errors
+docker compose logs jambot
+
+# Verify token in .env
+cat .env | grep DISCORD_BOT_TOKEN
+
+# Restart the bot
+docker compose restart jambot</code></pre>
+
+            <h3>Bot connects then immediately disconnects</h3>
+            <p><strong>Possible Causes:</strong></p>
+            <ol>
+                <li>Missing required intents</li>
+                <li>Configuration validation error</li>
+                <li>Database initialization failure</li>
+            </ol>
+
+            <p><strong>Solutions:</strong></p>
+            <ol>
+                <li>Check Discord Developer Portal:
+                    <ul>
+                        <li>Go to your app → Bot section</li>
+                        <li>Verify <strong>Message Content Intent</strong> is enabled</li>
+                        <li>Save changes and restart bot</li>
+                    </ul>
+                </li>
+                <li>Check logs for configuration errors:
+                    <pre><code>docker compose logs jambot | grep "error"</code></pre>
+                </li>
+            </ol>
+
+            <h2>Discord Integration</h2>
+
+            <h3>Bot can't send DMs to approver</h3>
+            <p><strong>Possible Causes:</strong></p>
+            <ul>
+                <li>Wrong approver User ID configured</li>
+                <li>Approver has DMs disabled</li>
+                <li>Bot and approver don't share a server</li>
+            </ul>
+
+            <p><strong>Solutions:</strong></p>
+            <ol>
+                <li>Verify approver ID with <code>/jambot-getid @username</code></li>
+                <li>Check approver's privacy settings:
+                    <ul>
+                        <li>Discord → User Settings → Privacy & Safety</li>
+                        <li>Enable "Allow direct messages from server members"</li>
+                    </ul>
+                </li>
+                <li>Ensure bot and approver share a server</li>
+            </ol>
+
+            <h2>Spotify Integration</h2>
+
+            <h3>Authentication failed</h3>
+            <p><strong>Possible Causes:</strong></p>
+            <ul>
+                <li>Invalid client ID or secret</li>
+                <li>Expired refresh token</li>
+                <li>Incorrect redirect URI</li>
+            </ul>
+
+            <p><strong>Solutions:</strong></p>
+            <ol>
+                <li>Verify credentials in <code>.env</code></li>
+                <li>Regenerate refresh token:
+                    <pre><code>python spotify_auth.py</code></pre>
+                </li>
+                <li>Verify redirect URI matches in Spotify Dashboard</li>
+            </ol>
+
+            <h3>Song search returns no results</h3>
+            <p><strong>Possible Causes:</strong></p>
+            <ul>
+                <li>Song not available on Spotify</li>
+                <li>Misspelled song title</li>
+                <li>Region restrictions</li>
+            </ul>
+
+            <p><strong>Solutions:</strong></p>
+            <ul>
+                <li>Try song variations (e.g., "Will the Circle" → "Will the Circle Be Unbroken")</li>
+                <li>Search Spotify app/web manually and reply with track link</li>
+            </ul>
+
+            <h2>Database Issues</h2>
+
+            <h3>Data not persisting</h3>
+            <p><strong>Possible Causes:</strong></p>
+            <ul>
+                <li>Database file not in persistent volume</li>
+                <li>Container data directory not mounted</li>
+            </ul>
+
+            <p><strong>Solutions:</strong></p>
+            <pre><code># Verify volume mount
+docker compose config
+
+# Check database writes
+sqlite3 data/jambot.db "SELECT COUNT(*) FROM songs;"</code></pre>
+
+            <h2>Common Error Messages</h2>
+
+            <h3>"Discord API error: 50007"</h3>
+            <p>"Cannot send messages to this user" - Check approver's DM privacy settings</p>
+
+            <h3>"Discord API error: 50013"</h3>
+            <p>"Missing Permissions" - Add required bot permissions in Discord server</p>
+
+            <h3>"HTTPException: 429 Too Many Requests"</h3>
+            <p>Rate limited - bot will automatically retry with backoff</p>
+
+            <h2>Prevention Tips</h2>
+            <ul>
+                <li><strong>Regular backups:</strong> Backup <code>data/jambot.db</code> regularly</li>
+                <li><strong>Monitor logs:</strong> Review logs weekly for warnings/errors</li>
+                <li><strong>Test changes:</strong> Test in development before deploying</li>
+            </ul>
+
+            <div class="alert alert-info">
+                <strong>💡 Still Need Help?</strong><br>
+                Check <a href="https://github.com/asachs01/jambot/issues">GitHub Issues</a> or review the source code in <code>src/</code>.
+            </div>
+
+            <h2>Next Steps</h2>
+            <ul>
+                <li><a href="setup.html">Review setup guide</a></li>
+                <li><a href="configuration.html">Check configuration</a></li>
+                <li><a href="https://github.com/asachs01/jambot/issues">Report an issue</a></li>
+            </ul>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <p>
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </p>
+            <p style="margin-top: 16px; opacity: 0.8;">© 2025 JamBot • Made with ❤️ for bluegrass communities</p>
+        </div>
+    </footer>
+</body>
+</html>

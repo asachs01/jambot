@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deployment Guide – JamBot Documentation</title>
+    <meta name="description" content="Deploy JamBot to DigitalOcean App Platform in minutes.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --orange: #C86A2A;
+            --orange-dark: #A0501E;
+            --brown: #3B2618;
+            --cream: #F2E3C8;
+            --green: #1DB954;
+            --tan: #8B5E3C;
+            --light-orange: #FFD18A;
+        }
+
+        body {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--brown);
+            line-height: 1.7;
+            font-size: 18px;
+            background: white;
+        }
+
+        /* Header */
+        .header {
+            background: var(--orange);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            text-decoration: none;
+            color: white;
+        }
+
+        .header-brand img {
+            width: 40px;
+            height: 40px;
+        }
+
+        .header-brand h1 {
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .header-nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 32px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .header-nav a:hover {
+            opacity: 0.8;
+        }
+
+        /* Main Layout */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 60px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: sticky;
+            top: 40px;
+            height: fit-content;
+        }
+
+        .sidebar h3 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--tan);
+            margin-bottom: 16px;
+        }
+
+        .sidebar ul {
+            list-style: none;
+        }
+
+        .sidebar li {
+            margin-bottom: 8px;
+        }
+
+        .sidebar a {
+            color: var(--brown);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+            display: block;
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+
+        .sidebar a:hover {
+            background: var(--cream);
+            color: var(--orange);
+        }
+
+        .sidebar a.active {
+            background: var(--orange);
+            color: white;
+        }
+
+        /* Content */
+        .content {
+            max-width: 800px;
+        }
+
+        .content h1 {
+            font-size: 42px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h2 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-top: 48px;
+            margin-bottom: 16px;
+            color: var(--brown);
+        }
+
+        .content h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            color: var(--brown);
+        }
+
+        .content h4 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            color: var(--brown);
+        }
+
+        .content p {
+            margin-bottom: 16px;
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 16px;
+            padding-left: 32px;
+        }
+
+        .content li {
+            margin-bottom: 8px;
+        }
+
+        .content a {
+            color: var(--orange);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        /* Code blocks */
+        .content code {
+            background: var(--cream);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Fira Code', monospace;
+            font-size: 16px;
+            color: var(--orange-dark);
+        }
+
+        .content pre {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 24px;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: var(--cream);
+            font-size: 14px;
+        }
+
+        /* Alert boxes */
+        .alert {
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: #E3F2FD;
+            border-color: #2196F3;
+            color: #0D47A1;
+        }
+
+        .alert-warning {
+            background: #FFF3E0;
+            border-color: #FF9800;
+            color: #E65100;
+        }
+
+        .alert-success {
+            background: #E8F5E9;
+            border-color: #4CAF50;
+            color: #1B5E20;
+        }
+
+        .step-badge {
+            display: inline-block;
+            background: var(--orange);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: 800;
+            margin-right: 8px;
+        }
+
+        .deploy-button {
+            display: inline-block;
+            margin: 24px 0;
+        }
+
+        .deploy-button img {
+            height: 40px;
+            transition: transform 0.2s;
+        }
+
+        .deploy-button:hover img {
+            transform: translateY(-2px);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 24px;
+        }
+
+        table th,
+        table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--cream);
+        }
+
+        table th {
+            background: var(--cream);
+            font-weight: 700;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 40px 0;
+            margin-top: 80px;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            text-align: center;
+        }
+
+        .footer-content a {
+            color: var(--light-orange);
+            text-decoration: none;
+            margin: 0 16px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+            }
+
+            .header-nav {
+                display: none;
+            }
+
+            .content h1 {
+                font-size: 32px;
+            }
+
+            .content h2 {
+                font-size: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="../index.html" class="header-brand">
+                <img src="../assets/icon.png" alt="JamBot">
+                <h1>JamBot Docs</h1>
+            </a>
+            <nav class="header-nav">
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <h3>Documentation</h3>
+            <ul>
+                <li><a href="setup.html">Setup Guide</a></li>
+                <li><a href="configuration.html">Configuration</a></li>
+                <li><a href="deployment.html" class="active">Deployment</a></li>
+                <li><a href="admin-guide.html">Admin Guide</a></li>
+                <li><a href="troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+        </aside>
+
+        <!-- Content -->
+        <main class="content">
+            <h1>Deploy to DigitalOcean</h1>
+            <p>Deploy JamBot to DigitalOcean's App Platform with simple one-click setup. Your bot will be running in minutes!</p>
+
+            <h2>Quick Deploy</h2>
+            <a href="https://cloud.digitalocean.com/apps/new?repo=https://github.com/asachs01/jambot/tree/main" class="deploy-button" target="_blank">
+                <img src="https://www.deploytodo.com/do-btn-blue.svg" alt="Deploy to DO">
+            </a>
+
+            <h2>Prerequisites</h2>
+            <p>Before deploying, make sure you have:</p>
+            <ul>
+                <li>A <a href="https://cloud.digitalocean.com/registrations/new" target="_blank">DigitalOcean account</a></li>
+                <li>Discord Bot Token (<a href="setup.html">see Setup Guide</a>)</li>
+                <li>Spotify API Credentials (<a href="setup.html">see Setup Guide</a>)</li>
+            </ul>
+
+            <h2><span class="step-badge">1</span>Deploy to App Platform</h2>
+
+            <h3>Option A: One-Click Deploy (Recommended)</h3>
+            <ol>
+                <li>Click the <strong>"Deploy to DigitalOcean"</strong> button above</li>
+                <li>DigitalOcean will prompt you to authorize access to your GitHub account</li>
+                <li>Fork or import the repository</li>
+                <li>Continue to the next step</li>
+            </ol>
+
+            <h3>Option B: Manual Deployment</h3>
+            <ol>
+                <li>Go to <a href="https://cloud.digitalocean.com/apps" target="_blank">DigitalOcean App Platform</a></li>
+                <li>Click <strong>"Create App"</strong></li>
+                <li>Select <strong>"GitHub"</strong> as your source</li>
+                <li>Choose the <code>jambot</code> repository</li>
+                <li>Select the <code>main</code> branch</li>
+                <li>Click <strong>"Next"</strong></li>
+            </ol>
+
+            <h2><span class="step-badge">2</span>Configure Environment Variables</h2>
+            <p>On the environment variables page, add the following secrets:</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Variable</th>
+                        <th>Description</th>
+                        <th>Where to get it</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>DISCORD_BOT_TOKEN</code></td>
+                        <td>Your Discord bot token</td>
+                        <td><a href="https://discord.com/developers/applications" target="_blank">Discord Developer Portal</a></td>
+                    </tr>
+                    <tr>
+                        <td><code>SPOTIFY_CLIENT_ID</code></td>
+                        <td>Your Spotify client ID</td>
+                        <td><a href="https://developer.spotify.com/dashboard" target="_blank">Spotify Dashboard</a></td>
+                    </tr>
+                    <tr>
+                        <td><code>SPOTIFY_CLIENT_SECRET</code></td>
+                        <td>Your Spotify client secret</td>
+                        <td><a href="https://developer.spotify.com/dashboard" target="_blank">Spotify Dashboard</a></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="alert alert-info">
+                <strong>💡 Note:</strong> <code>SPOTIFY_REDIRECT_URI</code> and other variables are automatically configured by the deployment template.
+            </div>
+
+            <h2><span class="step-badge">3</span>Deploy the App</h2>
+            <ol>
+                <li>Review the configuration</li>
+                <li>Click <strong>"Create Resources"</strong></li>
+                <li>Wait for the deployment to complete (2-3 minutes)</li>
+                <li>DigitalOcean will provide you with a public URL like: <code>https://jambot-xxxxx.ondigitalocean.app</code></li>
+            </ol>
+
+            <h2><span class="step-badge">4</span>Complete Spotify Setup</h2>
+
+            <h3>Update Spotify Redirect URI</h3>
+            <ol>
+                <li>Go to your <a href="https://developer.spotify.com/dashboard" target="_blank">Spotify App Dashboard</a></li>
+                <li>Select your app</li>
+                <li>Click <strong>"Edit Settings"</strong></li>
+                <li>Under <strong>"Redirect URIs"</strong>, add:
+                    <pre><code>https://your-app-url.ondigitalocean.app/callback</code></pre>
+                    (Replace <code>your-app-url</code> with your actual App Platform URL)
+                </li>
+                <li>Click <strong>"Save"</strong></li>
+            </ol>
+
+            <h3>Authenticate with Spotify</h3>
+            <ol>
+                <li>Visit your app URL: <code>https://your-app-url.ondigitalocean.app</code></li>
+                <li>You'll see the JamBot setup page</li>
+                <li>Click <strong>"Connect with Spotify"</strong></li>
+                <li>Log in to Spotify and authorize the app</li>
+                <li>You'll be redirected back to the setup page showing "✅ Spotify Connected!"</li>
+            </ol>
+
+            <h2><span class="step-badge">5</span>Add Bot to Discord Server</h2>
+            <ol>
+                <li>Get your bot invite URL from the <a href="https://discord.com/developers/applications" target="_blank">Discord Developer Portal</a></li>
+                <li>Or use this format:
+                    <pre><code>https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_CLIENT_ID&permissions=274878221376&scope=bot%20applications.commands</code></pre>
+                    (Replace <code>YOUR_BOT_CLIENT_ID</code> with your actual bot's client ID)
+                </li>
+                <li>Open the URL in your browser</li>
+                <li>Select your server</li>
+                <li>Click <strong>"Authorize"</strong></li>
+            </ol>
+
+            <h2><span class="step-badge">6</span>Configure Jam Leaders and Approvers</h2>
+            <ol>
+                <li>In your Discord server, type: <code>/jambot-setup</code></li>
+                <li>Fill in the modal with:
+                    <ul>
+                        <li><strong>Jam Leader User IDs:</strong> Discord user IDs who can post setlists</li>
+                        <li><strong>Song Approver User IDs:</strong> Discord user IDs who can approve songs</li>
+                    </ul>
+                </li>
+            </ol>
+
+            <div class="alert alert-info">
+                <strong>💡 Getting User IDs:</strong>
+                <ul>
+                    <li>Use <code>/jambot-getid @username</code> command</li>
+                    <li>Or enable Developer Mode in Discord and right-click → Copy ID</li>
+                </ul>
+            </div>
+
+            <h2><span class="step-badge">7</span>Test the Bot</h2>
+            <p>Post a test setlist in Discord:</p>
+
+            <pre><code>Here's the setlist for tonight's jam:
+
+Will the Circle (G)
+Little Georgia Rose (A)
+Wabash Cannonball (G)</code></pre>
+
+            <p>The bot should:</p>
+            <ul>
+                <li>Detect the setlist</li>
+                <li>Search for songs on Spotify</li>
+                <li>Send approval requests for ambiguous songs</li>
+                <li>Create a Spotify playlist</li>
+                <li>Post the playlist link in Discord</li>
+            </ul>
+
+            <div class="alert alert-success">
+                <strong>🎉 Deployment Complete!</strong> Your bot is now running on DigitalOcean App Platform.
+            </div>
+
+            <h2>Costs</h2>
+
+            <h3>App Platform Pricing</h3>
+            <ul>
+                <li><strong>Basic Plan:</strong> $5/month
+                    <ul>
+                        <li>512 MB RAM</li>
+                        <li>1 vCPU</li>
+                        <li>Perfect for small to medium Discord servers</li>
+                    </ul>
+                </li>
+                <li><strong>Professional Plan:</strong> Starting at $12/month
+                    <ul>
+                        <li>More resources for larger servers</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <p><a href="https://www.digitalocean.com/pricing/app-platform" target="_blank">View full pricing</a></p>
+
+            <h3>Database Storage</h3>
+            <p>The app uses SQLite stored in the container's filesystem. This means:</p>
+            <ul>
+                <li>✅ Free (included with your app)</li>
+                <li>⚠️ <strong>Data persists between deploys</strong> (as long as the app keeps running)</li>
+                <li>⚠️ <strong>Destroying the app will delete all data</strong></li>
+            </ul>
+
+            <div class="alert alert-warning">
+                <strong>⚠️ To preserve data:</strong>
+                <ul>
+                    <li>Don't delete the app</li>
+                    <li>Redeploys/updates preserve data</li>
+                    <li>Only "Destroy App" removes data</li>
+                </ul>
+            </div>
+
+            <h2>Monitoring and Logs</h2>
+
+            <h3>View Application Logs</h3>
+            <ol>
+                <li>Go to your app in the <a href="https://cloud.digitalocean.com/apps" target="_blank">App Platform Console</a></li>
+                <li>Click on your <strong>jambot</strong> service</li>
+                <li>Click <strong>"Runtime Logs"</strong></li>
+                <li>You'll see real-time logs of bot activity</li>
+            </ol>
+
+            <h3>Check Web Interface</h3>
+            <p>Visit your app URL to check Spotify authentication status:</p>
+            <pre><code>https://your-app-url.ondigitalocean.app</code></pre>
+
+            <h3>Health Checks</h3>
+            <p>App Platform automatically monitors your app's health at:</p>
+            <pre><code>https://your-app-url.ondigitalocean.app/health</code></pre>
+            <p>If health checks fail, the app will automatically restart.</p>
+
+            <h2>Updating the Bot</h2>
+
+            <h3>Automatic Updates</h3>
+            <p>If you have "Auto-Deploy" enabled:</p>
+            <ol>
+                <li>Push changes to your GitHub repository</li>
+                <li>App Platform automatically rebuilds and deploys</li>
+                <li>Zero downtime deployment</li>
+            </ol>
+
+            <h3>Manual Updates</h3>
+            <ol>
+                <li>Go to your app in the <a href="https://cloud.digitalocean.com/apps" target="_blank">App Platform Console</a></li>
+                <li>Click <strong>"Deploy"</strong> → <strong>"Deploy latest commit"</strong></li>
+                <li>Wait for the deployment to complete</li>
+            </ol>
+
+            <h2>Advanced Configuration</h2>
+
+            <h3>Custom Domain</h3>
+            <ol>
+                <li>Go to your app in App Platform</li>
+                <li>Click <strong>"Settings"</strong> → <strong>"Domains"</strong></li>
+                <li>Add your custom domain</li>
+                <li>Update Spotify redirect URI to use your domain</li>
+                <li>Update DNS records as shown</li>
+            </ol>
+
+            <h3>Scaling</h3>
+            <p>To handle more traffic:</p>
+            <ol>
+                <li>Go to app settings</li>
+                <li>Change instance size to Professional or higher</li>
+                <li>Increase instance count for high availability</li>
+            </ol>
+
+            <h3>Environment-Specific Configuration</h3>
+            <p>Create different apps for staging/production:</p>
+            <ol>
+                <li>Use different GitHub branches</li>
+                <li>Set different environment variables</li>
+                <li>Use separate Discord bots and Spotify apps</li>
+            </ol>
+
+            <h2>Next Steps</h2>
+            <ul>
+                <li><a href="configuration.html">Configure jam leaders and approvers</a></li>
+                <li><a href="admin-guide.html">Learn how to use the approval workflow</a></li>
+                <li><a href="troubleshooting.html">Troubleshooting common issues</a></li>
+            </ul>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <p>
+                <a href="../index.html">Home</a>
+                <a href="https://github.com/asachs01/jambot">GitHub</a>
+                <a href="https://github.com/asachs01/jambot/issues">Support</a>
+            </p>
+            <p style="margin-top: 16px; opacity: 0.8;">© 2025 JamBot • Made with ❤️ for bluegrass communities</p>
+        </div>
+    </footer>
+</body>
+</html>
