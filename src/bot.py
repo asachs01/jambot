@@ -229,13 +229,15 @@ class JamBot(commands.Bot):
                 return
 
             # Search for songs on Spotify and check database
-            song_matches = await self.find_song_matches(setlist_data['songs'])
+            guild_id = message.guild.id if message.guild else 0
+            song_matches = await self.find_song_matches(setlist_data['songs'], guild_id)
 
             # Send approval workflow to admin
             await self.send_approval_workflow(
                 setlist_data=setlist_data,
                 song_matches=song_matches,
-                original_channel_id=message.channel.id
+                original_channel_id=message.channel.id,
+                guild_id=guild_id
             )
 
         except Exception as e:
@@ -245,11 +247,12 @@ class JamBot(commands.Bot):
                 guild_id=message.guild.id if message.guild else None
             )
 
-    async def find_song_matches(self, songs: List[Dict]) -> List[Dict[str, Any]]:
-        """Find Spotify matches for a list of songs.
+    async def find_song_matches(self, songs: List[Dict], guild_id: int) -> List[Dict[str, Any]]:
+        """Find Spotify matches for a list of songs within a specific guild.
 
         Args:
             songs: List of song dictionaries with 'title' and 'number'.
+            guild_id: Discord guild (server) ID.
 
         Returns:
             List of match dictionaries with song info and Spotify results.
@@ -258,10 +261,10 @@ class JamBot(commands.Bot):
 
         for song in songs:
             song_title = song['title']
-            logger.info(f"Searching for song: {song_title}")
+            logger.info(f"Searching for song in guild {guild_id}: {song_title}")
 
-            # Check database first
-            db_song = self.db.get_song_by_title(song_title)
+            # Check database first (guild-scoped)
+            db_song = self.db.get_song_by_title(guild_id, song_title)
             if db_song:
                 logger.info(f"Found stored version for: {song_title}")
                 match = {
@@ -296,7 +299,8 @@ class JamBot(commands.Bot):
         self,
         setlist_data: Dict,
         song_matches: List[Dict],
-        original_channel_id: int
+        original_channel_id: int,
+        guild_id: int
     ):
         """Send approval workflow DM to all configured approvers.
 
@@ -304,18 +308,9 @@ class JamBot(commands.Bot):
             setlist_data: Parsed setlist data.
             song_matches: List of song matches from database/Spotify.
             original_channel_id: ID of channel where setlist was posted.
+            guild_id: Discord guild (server) ID.
         """
         try:
-            # Get guild from channel
-            channel = self.get_channel(original_channel_id)
-            if not channel or not hasattr(channel, 'guild'):
-                logger.error(
-                    f"Could not find guild for channel {original_channel_id}. "
-                    f"Channel may have been deleted or bot lacks permissions."
-                )
-                return
-
-            guild_id = channel.guild.id
 
             # Get approver IDs from database
             approver_ids = self.db.get_approver_ids(guild_id)
@@ -591,6 +586,7 @@ class JamBot(commands.Bot):
 
             # Create setlist in database
             setlist_id = self.db.create_setlist(
+                guild_id=guild_id or 0,
                 date=setlist_data['date'],
                 time=setlist_data['time'],
                 playlist_name=playlist_name
@@ -609,6 +605,7 @@ class JamBot(commands.Bot):
 
                 # Add/update song in database
                 song_id = self.db.add_or_update_song(
+                    guild_id=guild_id or 0,
                     song_title=song_title,
                     spotify_track_id=track['id'],
                     spotify_track_name=track['name'],

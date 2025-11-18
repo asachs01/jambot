@@ -52,18 +52,21 @@ class Database:
         schema = """
         CREATE TABLE IF NOT EXISTS songs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            song_title TEXT UNIQUE NOT NULL,
+            guild_id INTEGER NOT NULL,
+            song_title TEXT NOT NULL,
             spotify_track_id TEXT NOT NULL,
             spotify_track_name TEXT NOT NULL,
             artist TEXT NOT NULL,
             album TEXT NOT NULL,
             spotify_url TEXT NOT NULL,
             first_used DATE NOT NULL,
-            last_used DATE NOT NULL
+            last_used DATE NOT NULL,
+            UNIQUE(guild_id, song_title)
         );
 
         CREATE TABLE IF NOT EXISTS setlists (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
             date TEXT NOT NULL,
             time TEXT NOT NULL,
             playlist_name TEXT NOT NULL,
@@ -92,8 +95,8 @@ class Database:
             updated_by INTEGER NOT NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(song_title);
-        CREATE INDEX IF NOT EXISTS idx_setlists_date ON setlists(date);
+        CREATE INDEX IF NOT EXISTS idx_songs_guild_title ON songs(guild_id, song_title);
+        CREATE INDEX IF NOT EXISTS idx_setlists_guild_date ON setlists(guild_id, date);
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_setlist_id ON setlist_songs(setlist_id);
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_song_id ON setlist_songs(song_id);
         CREATE INDEX IF NOT EXISTS idx_bot_configuration_guild_id ON bot_configuration(guild_id);
@@ -102,24 +105,90 @@ class Database:
         with self.get_connection() as conn:
             conn.executescript(schema)
 
-            # Migrate existing databases - add new columns if they don't exist
-            cursor = conn.execute("PRAGMA table_info(bot_configuration)")
-            columns = [row[1] for row in cursor.fetchall()]
+            # Migrate existing databases - add guild_id columns if they don't exist
+            cursor = conn.execute("PRAGMA table_info(songs)")
+            songs_columns = [row[1] for row in cursor.fetchall()]
 
-            if 'channel_id' not in columns:
+            cursor = conn.execute("PRAGMA table_info(setlists)")
+            setlists_columns = [row[1] for row in cursor.fetchall()]
+
+            cursor = conn.execute("PRAGMA table_info(bot_configuration)")
+            config_columns = [row[1] for row in cursor.fetchall()]
+
+            # Migration for songs table
+            if 'guild_id' not in songs_columns:
+                logger.info("Migrating songs table to add guild_id column...")
+                # Create new table with guild_id
+                conn.execute("""
+                    CREATE TABLE songs_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        guild_id INTEGER NOT NULL DEFAULT 0,
+                        song_title TEXT NOT NULL,
+                        spotify_track_id TEXT NOT NULL,
+                        spotify_track_name TEXT NOT NULL,
+                        artist TEXT NOT NULL,
+                        album TEXT NOT NULL,
+                        spotify_url TEXT NOT NULL,
+                        first_used DATE NOT NULL,
+                        last_used DATE NOT NULL,
+                        UNIQUE(guild_id, song_title)
+                    )
+                """)
+                # Copy data (all existing songs assigned to guild_id 0 for backwards compatibility)
+                conn.execute("""
+                    INSERT INTO songs_new
+                    SELECT id, 0 as guild_id, song_title, spotify_track_id, spotify_track_name,
+                           artist, album, spotify_url, first_used, last_used
+                    FROM songs
+                """)
+                # Drop old table and rename
+                conn.execute("DROP TABLE songs")
+                conn.execute("ALTER TABLE songs_new RENAME TO songs")
+                conn.execute("CREATE INDEX idx_songs_guild_title ON songs(guild_id, song_title)")
+                logger.info("Migrated songs table successfully")
+
+            # Migration for setlists table
+            if 'guild_id' not in setlists_columns:
+                logger.info("Migrating setlists table to add guild_id column...")
+                conn.execute("""
+                    CREATE TABLE setlists_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        guild_id INTEGER NOT NULL DEFAULT 0,
+                        date TEXT NOT NULL,
+                        time TEXT NOT NULL,
+                        playlist_name TEXT NOT NULL,
+                        spotify_playlist_id TEXT,
+                        spotify_playlist_url TEXT,
+                        created_at TIMESTAMP NOT NULL
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO setlists_new
+                    SELECT id, 0 as guild_id, date, time, playlist_name,
+                           spotify_playlist_id, spotify_playlist_url, created_at
+                    FROM setlists
+                """)
+                conn.execute("DROP TABLE setlists")
+                conn.execute("ALTER TABLE setlists_new RENAME TO setlists")
+                conn.execute("CREATE INDEX idx_setlists_guild_date ON setlists(guild_id, date)")
+                logger.info("Migrated setlists table successfully")
+
+            # Migrate bot_configuration table columns
+            if 'channel_id' not in config_columns:
                 conn.execute("ALTER TABLE bot_configuration ADD COLUMN channel_id INTEGER")
                 logger.info("Added channel_id column to bot_configuration table")
 
-            if 'playlist_name_template' not in columns:
+            if 'playlist_name_template' not in config_columns:
                 conn.execute("ALTER TABLE bot_configuration ADD COLUMN playlist_name_template TEXT")
                 logger.info("Added playlist_name_template column to bot_configuration table")
 
             logger.info("Database schema initialized successfully")
 
-    def get_song_by_title(self, song_title: str) -> Optional[Dict[str, Any]]:
-        """Look up a song by title.
+    def get_song_by_title(self, guild_id: int, song_title: str) -> Optional[Dict[str, Any]]:
+        """Look up a song by title within a specific guild.
 
         Args:
+            guild_id: Discord guild (server) ID.
             song_title: The song title to search for.
 
         Returns:
@@ -127,8 +196,8 @@ class Database:
         """
         with self.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT * FROM songs WHERE song_title = ?",
-                (song_title,)
+                "SELECT * FROM songs WHERE guild_id = ? AND song_title = ?",
+                (guild_id, song_title)
             )
             row = cursor.fetchone()
             if row:
@@ -137,6 +206,7 @@ class Database:
 
     def add_or_update_song(
         self,
+        guild_id: int,
         song_title: str,
         spotify_track_id: str,
         spotify_track_name: str,
@@ -144,9 +214,10 @@ class Database:
         album: str,
         spotify_url: str
     ) -> int:
-        """Add a new song or update existing song's last_used date.
+        """Add a new song or update existing song's last_used date within a specific guild.
 
         Args:
+            guild_id: Discord guild (server) ID.
             song_title: Title of the song.
             spotify_track_id: Spotify track ID.
             spotify_track_name: Full track name from Spotify.
@@ -160,8 +231,8 @@ class Database:
         today = datetime.now().date().isoformat()
 
         with self.get_connection() as conn:
-            # Check if song exists
-            existing = self.get_song_by_title(song_title)
+            # Check if song exists for this guild
+            existing = self.get_song_by_title(guild_id, song_title)
 
             if existing:
                 # Update last_used date
@@ -169,23 +240,24 @@ class Database:
                     "UPDATE songs SET last_used = ? WHERE id = ?",
                     (today, existing['id'])
                 )
-                logger.info(f"Updated last_used for song: {song_title}")
+                logger.info(f"Updated last_used for song in guild {guild_id}: {song_title}")
                 return existing['id']
             else:
                 # Insert new song
                 cursor = conn.execute(
                     """INSERT INTO songs
-                       (song_title, spotify_track_id, spotify_track_name, artist, album, spotify_url, first_used, last_used)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (song_title, spotify_track_id, spotify_track_name, artist, album, spotify_url, today, today)
+                       (guild_id, song_title, spotify_track_id, spotify_track_name, artist, album, spotify_url, first_used, last_used)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (guild_id, song_title, spotify_track_id, spotify_track_name, artist, album, spotify_url, today, today)
                 )
-                logger.info(f"Added new song to database: {song_title}")
+                logger.info(f"Added new song to database for guild {guild_id}: {song_title}")
                 return cursor.lastrowid
 
-    def create_setlist(self, date: str, time: str, playlist_name: str) -> int:
-        """Create a new setlist record.
+    def create_setlist(self, guild_id: int, date: str, time: str, playlist_name: str) -> int:
+        """Create a new setlist record for a specific guild.
 
         Args:
+            guild_id: Discord guild (server) ID.
             date: Setlist date.
             time: Setlist time.
             playlist_name: Name of the Spotify playlist.
@@ -197,12 +269,12 @@ class Database:
 
         with self.get_connection() as conn:
             cursor = conn.execute(
-                """INSERT INTO setlists (date, time, playlist_name, created_at)
-                   VALUES (?, ?, ?, ?)""",
-                (date, time, playlist_name, created_at)
+                """INSERT INTO setlists (guild_id, date, time, playlist_name, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (guild_id, date, time, playlist_name, created_at)
             )
             setlist_id = cursor.lastrowid
-            logger.info(f"Created setlist: {playlist_name} (ID: {setlist_id})")
+            logger.info(f"Created setlist for guild {guild_id}: {playlist_name} (ID: {setlist_id})")
             return setlist_id
 
     def update_setlist_playlist(self, setlist_id: int, playlist_id: str, playlist_url: str):
@@ -258,10 +330,11 @@ class Database:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_setlist_by_date(self, date: str) -> Optional[Dict[str, Any]]:
-        """Get a setlist by date.
+    def get_setlist_by_date(self, guild_id: int, date: str) -> Optional[Dict[str, Any]]:
+        """Get a setlist by date within a specific guild.
 
         Args:
+            guild_id: Discord guild (server) ID.
             date: Setlist date.
 
         Returns:
@@ -269,8 +342,8 @@ class Database:
         """
         with self.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT * FROM setlists WHERE date = ?",
-                (date,)
+                "SELECT * FROM setlists WHERE guild_id = ? AND date = ?",
+                (guild_id, date)
             )
             row = cursor.fetchone()
             if row:
