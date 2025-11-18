@@ -281,7 +281,7 @@ All errors are logged and the admin is notified via DM for critical failures.
 
 ## License
 
-[Your License Here]
+[LICENSE.md](LICENSE.md)
 
 ## Support
 
