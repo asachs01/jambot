@@ -196,13 +196,20 @@ This updates both the pending setlist and the stored version for future jams.
 jambot/
 ├── src/
 │   ├── __init__.py
-│   ├── main.py              # Entry point
+│   ├── app.py               # Combined entry point (web + bot)
+│   ├── main.py              # Discord bot entry point
+│   ├── web_server.py        # Flask web server for Spotify auth
+│   ├── bot.py               # Discord bot logic
+│   ├── commands.py          # Discord slash commands
 │   ├── config.py            # Configuration management
-│   ├── logger.py            # Logging setup
 │   ├── database.py          # SQLite database interface
 │   ├── spotify_client.py    # Spotify API integration
 │   ├── setlist_parser.py    # Message parsing
-│   └── bot.py               # Discord bot logic
+│   └── logger.py            # Logging setup
+├── scripts/
+│   └── setup_spotify_auth.py # Local Spotify OAuth helper
+├── .do/
+│   └── deploy.template.yaml # DigitalOcean deployment template
 ├── data/                    # SQLite database (mounted volume)
 ├── logs/                    # Log files (mounted volume)
 ├── .env                     # Environment configuration
@@ -216,8 +223,8 @@ jambot/
 
 - [Discord Bot Setup](SETUP_DISCORD.md) - How to create and configure the Discord bot
 - [Spotify API Setup](SPOTIFY_SETUP.md) - How to set up Spotify developer credentials
+- [Configuration Guide](CONFIGURATION.md) - Modal-based configuration via Discord
 - [Deployment Guide](DEPLOYMENT.md) - DigitalOcean App Platform deployment
-- [Deployment Options](DEPLOYMENT_OPTIONS.md) - Compare all deployment methods
 - [Admin Guide](ADMIN_GUIDE.md) - Using the approval workflow
 - [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
 
