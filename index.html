@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JamBot – Turn Jam Lists into Playlists</title>
+    <meta name="description" content="JamBot automatically converts your jam session setlists into Spotify playlists. Perfect for bluegrass communities.">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --orange: #C86A2A;
+            --orange-dark: #A0501E;
+            --brown: #3B2618;
+            --cream: #F2E3C8;
+            --green: #1DB954;
+            --tan: #8B5E3C;
+            --light-orange: #FFD18A;
+        }
+
+        body {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--brown);
+            line-height: 1.7;
+            font-size: 18px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Hero Section */
+        .hero {
+            background: var(--orange);
+            color: white;
+            padding: 80px 0 100px;
+            text-align: center;
+        }
+
+        .hero-logo {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 32px;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+        }
+
+        .hero h1 {
+            font-size: 56px;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-bottom: 24px;
+        }
+
+        .hero .lead {
+            font-size: 20px;
+            line-height: 1.6;
+            max-width: 700px;
+            margin: 0 auto 40px;
+            opacity: 0.95;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 16px 40px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: white;
+            color: var(--orange);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-large {
+            padding: 18px 48px;
+            font-size: 20px;
+        }
+
+        .hero-caption {
+            margin-top: 20px;
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        /* How It Works */
+        .how-it-works {
+            padding: 80px 0;
+            background: white;
+        }
+
+        .how-it-works h2 {
+            font-size: 48px;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 48px;
+        }
+
+        .step {
+            text-align: center;
+        }
+
+        .step-number {
+            width: 60px;
+            height: 60px;
+            background: var(--orange);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: 800;
+            margin: 0 auto 24px;
+        }
+
+        .step h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .step p {
+            font-size: 18px;
+            color: var(--brown);
+            opacity: 0.8;
+        }
+
+        /* Features */
+        .features {
+            padding: 80px 0;
+            background: var(--cream);
+        }
+
+        .features h2 {
+            font-size: 48px;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 32px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 2px 8px rgba(59, 38, 24, 0.1);
+            transition: all 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(59, 38, 24, 0.15);
+        }
+
+        .feature-icon {
+            width: 64px;
+            height: 64px;
+            background: var(--green);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            font-size: 32px;
+        }
+
+        .card h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .card p {
+            opacity: 0.8;
+        }
+
+        /* Discord Demo */
+        .discord-demo {
+            padding: 80px 0;
+            background: white;
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            align-items: center;
+        }
+
+        .col-text h2 {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 24px;
+        }
+
+        .col-text p {
+            margin-bottom: 24px;
+        }
+
+        .checklist {
+            list-style: none;
+            margin-bottom: 32px;
+        }
+
+        .checklist li {
+            padding: 8px 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--orange);
+            border: 2px solid var(--orange);
+        }
+
+        .btn-secondary:hover {
+            background: var(--orange);
+            color: white;
+        }
+
+        .col-image img {
+            width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(59, 38, 24, 0.15);
+        }
+
+        /* CTA */
+        .cta {
+            padding: 80px 0;
+            background: var(--orange);
+            color: white;
+            text-align: center;
+        }
+
+        .cta h2 {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 20px;
+        }
+
+        .cta p {
+            font-size: 20px;
+            margin-bottom: 32px;
+            opacity: 0.95;
+        }
+
+        .btn-white {
+            background: white;
+            color: var(--orange);
+        }
+
+        .btn-white:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        .cta-caption {
+            margin-top: 20px;
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        /* Footer */
+        footer {
+            padding: 60px 0 40px;
+            background: var(--brown);
+            color: var(--cream);
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 40px;
+        }
+
+        .footer-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .footer-brand img {
+            width: 48px;
+            height: 48px;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 32px;
+        }
+
+        .footer-links a {
+            color: var(--cream);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover {
+            color: var(--light-orange);
+        }
+
+        .footer-bottom {
+            text-align: center;
+            padding-top: 40px;
+            border-top: 1px solid rgba(242, 227, 200, 0.2);
+        }
+
+        .footer-bottom p {
+            font-size: 16px;
+            opacity: 0.8;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 40px;
+            }
+
+            .hero .lead {
+                font-size: 18px;
+            }
+
+            .steps {
+                grid-template-columns: 1fr;
+                gap: 32px;
+            }
+
+            .feature-grid {
+                grid-template-columns: 1fr;
+                gap: 24px;
+            }
+
+            .two-col {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .col-image {
+                order: -1;
+            }
+
+            .how-it-works h2,
+            .features h2,
+            .col-text h2,
+            .cta h2 {
+                font-size: 36px;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                gap: 32px;
+            }
+
+            .footer-links {
+                flex-direction: column;
+                gap: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <img src="icon.png" alt="JamBot logo" class="hero-logo" />
+            <h1>Turn jam lists into playlists</h1>
+            <p class="lead">
+                JamBot automatically converts your jam session setlists into Spotify playlists. 
+                Post your setlist, approve the songs, and get a playlist your community can practice with.
+            </p>
+            <a href="#" class="btn btn-primary btn-large">Add to Discord</a>
+            <p class="hero-caption">Free for bluegrass communities • Works with any jam format</p>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="how-it-works">
+        <div class="container">
+            <h2>How It Works</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3>Post Your Setlist</h3>
+                    <p>Leader shares the jam setlist in your Discord channel</p>
+                </div>
+                
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3>JamBot Finds Songs</h3>
+                    <p>Automatically searches Spotify for each song</p>
+                </div>
+                
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3>Approve & Practice</h3>
+                    <p>Admin approves selections, playlist ready for the community</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features">
+        <div class="container">
+            <h2>Built for Jam Communities</h2>
+            <div class="feature-grid">
+                
+                <div class="card">
+                    <div class="feature-icon">🎵</div>
+                    <h3>Remembers Preferences</h3>
+                    <p>Learns which versions your community prefers for consistent playlists</p>
+                </div>
+                
+                <div class="card">
+                    <div class="feature-icon">👥</div>
+                    <h3>Admin Approval</h3>
+                    <p>Leaders review and approve song selections before playlist creation</p>
+                </div>
+                
+                <div class="card">
+                    <div class="feature-icon">⏱️</div>
+                    <h3>Saves Time</h3>
+                    <p>No more manual playlist creation – JamBot handles it automatically</p>
+                </div>
+                
+                <div class="card">
+                    <div class="feature-icon">🎧</div>
+                    <h3>Spotify Integration</h3>
+                    <p>Creates playlists directly in Spotify for easy practice</p>
+                </div>
+                
+            </div>
+        </div>
+    </section>
+
+    <!-- Discord Integration -->
+    <section class="discord-demo">
+        <div class="container">
+            <div class="two-col">
+                <div class="col-text">
+                    <h2>Works Right in Discord</h2>
+                    <p>
+                        JamBot lives in your Discord server where your community already gathers. 
+                        No separate app, no new logins – just seamless playlist creation in the 
+                        tool you already use.
+                    </p>
+                    <ul class="checklist">
+                        <li>✓ Simple slash commands</li>
+                        <li>✓ Interactive approval flow</li>
+                        <li>✓ Automatic updates</li>
+                    </ul>
+                    <a href="#" class="btn btn-secondary">View Setup Guide</a>
+                </div>
+                <div class="col-image">
+                    <img src="https://placehold.co/600x400/F2E3C8/3B2618?text=Discord+Screenshot" alt="JamBot in Discord" />
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta">
+        <div class="container">
+            <h2>Ready to jam?</h2>
+            <p>Add JamBot to your Discord server and start creating playlists for your community</p>
+            <a href="#" class="btn btn-white btn-large">Add to Discord</a>
+            <p class="cta-caption">Free to use • Open source on GitHub</p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <img src="icon.png" alt="JamBot" />
+                    <p>Turn jam lists into playlists</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/asachs01/jambot">GitHub</a>
+                    <a href="#">Documentation</a>
+                    <a href="#">Privacy</a>
+                    <a href="#">Support</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>© 2024 JamBot • Made with ❤️ for bluegrass communities</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
