@@ -56,6 +56,19 @@ class SpotifyClient:
 
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Create table if it doesn't exist
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS spotify_tokens (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    access_token TEXT NOT NULL,
+                    refresh_token TEXT NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+                )
+            """)
+
             cursor.execute("""
                 SELECT access_token, refresh_token, expires_at
                 FROM spotify_tokens
