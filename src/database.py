@@ -426,8 +426,19 @@ class Database:
         """
         config = self.get_bot_configuration(guild_id)
         if config:
-            return user_id in config['jam_leader_ids']
-        return False
+            is_leader = user_id in config['jam_leader_ids']
+            logger.info(
+                f"Jam leader check for guild {guild_id}, user {user_id}: {is_leader} "
+                f"(configured leaders: {config['jam_leader_ids']})"
+            )
+            return is_leader
+        else:
+            logger.warning(
+                f"No bot configuration found for guild {guild_id}. "
+                f"User {user_id} will not be recognized as jam leader. "
+                f"Please run /jambot-setup to configure the bot."
+            )
+            return False
 
     def is_approver(self, guild_id: int, user_id: int) -> bool:
         """Check if a user is an approver for a guild.
