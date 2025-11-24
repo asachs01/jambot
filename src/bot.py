@@ -29,7 +29,6 @@ class JamBot(commands.Bot):
         super().__init__(command_prefix='@jambot ', intents=intents)
 
         self.db = Database()
-        self._spotify = None  # Lazy initialization
         self.parser = SetlistParser()
         self.commands_handler = JambotCommands(self, self.db)
 
@@ -37,17 +36,6 @@ class JamBot(commands.Bot):
         self.active_workflows: Dict[int, Dict] = {}  # message_id -> workflow data
 
         logger.info("JamBot initialized")
-
-    @property
-    def spotify(self) -> SpotifyClient:
-        """Lazy initialization of Spotify client.
-
-        Returns:
-            SpotifyClient instance.
-        """
-        if self._spotify is None:
-            self._spotify = SpotifyClient()
-        return self._spotify
 
     async def setup_hook(self):
         """Called when the bot is setting up."""
@@ -173,7 +161,14 @@ class JamBot(commands.Bot):
 
             # Validate and get track info
             logger.info(f"User provided manual Spotify URL for song {song_number}: {spotify_url}")
-            track_info = self.spotify.get_track_from_url(spotify_url)
+
+            # Get guild_id from workflow
+            workflow = self.active_workflows[workflow_id]
+            guild_id = workflow.get('guild_id', 0)
+
+            # Create Spotify client for this guild
+            spotify = SpotifyClient(guild_id=guild_id)
+            track_info = spotify.get_track_from_url(spotify_url)
 
             if not track_info:
                 await message.reply(
@@ -259,6 +254,9 @@ class JamBot(commands.Bot):
         """
         matches = []
 
+        # Create Spotify client for this guild
+        spotify = SpotifyClient(guild_id=guild_id)
+
         for song in songs:
             song_title = song['title']
             logger.info(f"Searching for song in guild {guild_id}: {song_title}")
@@ -282,7 +280,7 @@ class JamBot(commands.Bot):
                 }
             else:
                 # Search Spotify
-                spotify_results = self.spotify.search_song(song_title, limit=3)
+                spotify_results = spotify.search_song(song_title, limit=3)
                 logger.info(f"Spotify search returned {len(spotify_results)} results")
                 match = {
                     'number': song['number'],
@@ -334,7 +332,8 @@ class JamBot(commands.Bot):
                         approver_id,
                         setlist_data,
                         song_matches,
-                        original_channel_id
+                        original_channel_id,
+                        guild_id
                     )
                 except Exception as e:
                     logger.error(f"Failed to send approval workflow to user {approver_id}: {e}")
@@ -347,7 +346,8 @@ class JamBot(commands.Bot):
         user_id: int,
         setlist_data: Dict,
         song_matches: List[Dict],
-        original_channel_id: int
+        original_channel_id: int,
+        guild_id: int = 0
     ):
         """Send approval workflow DM to a specific user.
 
@@ -356,6 +356,7 @@ class JamBot(commands.Bot):
             setlist_data: Parsed setlist data.
             song_matches: List of song matches from database/Spotify.
             original_channel_id: ID of channel where setlist was posted.
+            guild_id: Discord guild (server) ID.
         """
         # Get user
         user = await self.fetch_user(user_id)
@@ -382,6 +383,7 @@ class JamBot(commands.Bot):
             'setlist_data': setlist_data,
             'song_matches': song_matches,
             'original_channel_id': original_channel_id,
+            'guild_id': guild_id,  # Store guild_id for DM handlers
             'selections': {},  # song_number -> track_info
             'message_ids': [],  # DM message IDs for reaction tracking
         }
@@ -620,15 +622,18 @@ class JamBot(commands.Bot):
                 # Add to playlist
                 track_uris.append(track['uri'])
 
+            # Create Spotify client for this guild
+            spotify = SpotifyClient(guild_id=guild_id)
+
             # Create Spotify playlist
-            playlist_info = self.spotify.create_playlist(
+            playlist_info = spotify.create_playlist(
                 name=playlist_name,
                 description=f"Bluegrass jam setlist for {setlist_data['time']} on {setlist_data['date']}",
                 public=True
             )
 
             # Add tracks
-            self.spotify.add_tracks_to_playlist(playlist_info['id'], track_uris)
+            spotify.add_tracks_to_playlist(playlist_info['id'], track_uris)
 
             # Update database with playlist info
             self.db.update_setlist_playlist(

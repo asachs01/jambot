@@ -21,34 +21,91 @@ class SpotifyClient:
         "foggy mountain breakdown": [],
     }
 
-    def __init__(self, db=None):
+    def __init__(self, db=None, guild_id: Optional[int] = None):
         """Initialize Spotify client with OAuth.
 
         Args:
             db: Database instance for token storage (optional).
+            guild_id: Discord guild ID for multi-guild support (optional, defaults to 0 for legacy).
         """
-        logger.info("Initializing Spotify client...")
+        logger.info(f"Initializing Spotify client for guild {guild_id}...")
         self.db = db
+        self.guild_id = guild_id if guild_id is not None else 0  # 0 for legacy single-guild
+
+        # Load Spotify credentials for this guild
+        self.credentials = self._get_spotify_credentials()
+
         try:
             self.sp = self._authenticate()
             logger.info("Spotify authentication complete, getting user ID...")
             self.user_id = self._get_user_id()
-            logger.info(f"Spotify client initialized for user: {self.user_id}")
+            logger.info(f"Spotify client initialized for user: {self.user_id} (guild: {self.guild_id})")
         except Exception as e:
-            logger.error(f"Failed to initialize Spotify client: {e}")
+            logger.error(f"Failed to initialize Spotify client for guild {self.guild_id}: {e}")
             logger.warning("Spotify features will be disabled - bot will still detect setlists")
-            logger.warning("To fix Spotify authentication, run: python scripts/setup_spotify_auth.py")
+            logger.warning("To fix Spotify authentication, use /jambot-spotify-config and /jambot-spotify-setup in Discord")
             self.sp = None
             self.user_id = None
 
+    def _get_spotify_credentials(self) -> Dict[str, str]:
+        """Get Spotify app credentials from database for this guild.
+
+        Returns:
+            Dictionary with client_id, client_secret, and redirect_uri.
+
+        Raises:
+            ValueError: If no credentials configured for this guild.
+        """
+        if not self.db:
+            from src.database import Database
+            self.db = Database()
+
+        # Get bot configuration for this guild
+        config = self.db.get_bot_configuration(self.guild_id)
+
+        if not config:
+            raise ValueError(
+                f"No configuration found for guild {self.guild_id}. "
+                "Run /jambot-setup to configure the bot first."
+            )
+
+        # Check if Spotify credentials are configured
+        client_id = config.get('spotify_client_id')
+        client_secret = config.get('spotify_client_secret')
+        redirect_uri = config.get('spotify_redirect_uri')
+
+        # Fall back to environment variables for legacy/development
+        if not client_id or not client_secret:
+            logger.warning(
+                f"No Spotify credentials configured for guild {self.guild_id}, "
+                "falling back to environment variables (legacy mode)"
+            )
+            return {
+                'client_id': Config.SPOTIFY_CLIENT_ID,
+                'client_secret': Config.SPOTIFY_CLIENT_SECRET,
+                'redirect_uri': Config.SPOTIFY_REDIRECT_URI,
+            }
+
+        # Use configured redirect_uri or fall back to default web server URL
+        if not redirect_uri:
+            redirect_uri = Config.SPOTIFY_REDIRECT_URI
+            logger.info(f"Using default redirect URI: {redirect_uri}")
+
+        logger.info(f"Loaded Spotify credentials for guild {self.guild_id}")
+        return {
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'redirect_uri': redirect_uri,
+        }
+
     def _get_tokens_from_db(self) -> dict:
-        """Get stored Spotify tokens from database.
+        """Get stored Spotify tokens from database for this guild.
 
         Returns:
             Dictionary with access_token, refresh_token, and expires_at.
 
         Raises:
-            ValueError: If no tokens found in database.
+            ValueError: If no tokens found in database for this guild.
         """
         if not self.db:
             from src.database import Database
@@ -57,29 +114,17 @@ class SpotifyClient:
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Create table if it doesn't exist
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS spotify_tokens (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    access_token TEXT NOT NULL,
-                    refresh_token TEXT NOT NULL,
-                    expires_at INTEGER NOT NULL,
-                    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-                    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
-                )
-            """)
-
             cursor.execute("""
                 SELECT access_token, refresh_token, expires_at
                 FROM spotify_tokens
-                WHERE id = 1
-            """)
+                WHERE guild_id = ?
+            """, (self.guild_id,))
 
             row = cursor.fetchone()
             if not row:
                 raise ValueError(
-                    "No Spotify tokens found in database. "
-                    "Run: python scripts/setup_spotify_auth.py"
+                    f"No Spotify tokens found for guild {self.guild_id}. "
+                    "Use /jambot-spotify-setup in Discord to connect Spotify"
                 )
 
             return {
@@ -88,39 +133,32 @@ class SpotifyClient:
                 'expires_at': row[2],
             }
 
-    def _save_tokens_to_db(self, access_token: str, refresh_token: str, expires_at: int):
-        """Save tokens to database.
+    def _save_tokens_to_db(self, access_token: str, refresh_token: str, expires_at: int, user_id: Optional[int] = None):
+        """Save tokens to database for this guild.
 
         Args:
             access_token: Spotify access token.
             refresh_token: Spotify refresh token.
             expires_at: Unix timestamp when token expires.
+            user_id: Discord user ID who authorized (optional, defaults to 0 for legacy).
         """
         if not self.db:
             from src.database import Database
             self.db = Database()
 
+        authorized_by = user_id if user_id is not None else 0
+
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Create table if it doesn't exist
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS spotify_tokens (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    access_token TEXT NOT NULL,
-                    refresh_token TEXT NOT NULL,
-                    expires_at INTEGER NOT NULL,
-                    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-                    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
-                )
-            """)
-
-            # Insert or update
+            # Insert or update tokens for this guild
             cursor.execute("""
                 INSERT OR REPLACE INTO spotify_tokens
-                (id, access_token, refresh_token, expires_at, updated_at)
-                VALUES (1, ?, ?, ?, strftime('%s', 'now'))
-            """, (access_token, refresh_token, expires_at))
+                (guild_id, access_token, refresh_token, expires_at, authorized_by, updated_at)
+                VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
+            """, (self.guild_id, access_token, refresh_token, expires_at, authorized_by))
+
+            logger.info(f"Saved Spotify tokens for guild {self.guild_id} (authorized by user {authorized_by})")
 
     def _authenticate(self) -> spotipy.Spotify:
         """Authenticate with Spotify using database tokens.
@@ -136,11 +174,11 @@ class SpotifyClient:
             logger.info("Loading Spotify tokens from database...")
             tokens = self._get_tokens_from_db()
 
-            # Create auth manager
+            # Create auth manager with guild-specific credentials
             auth_manager = SpotifyOAuth(
-                client_id=Config.SPOTIFY_CLIENT_ID,
-                client_secret=Config.SPOTIFY_CLIENT_SECRET,
-                redirect_uri=Config.SPOTIFY_REDIRECT_URI,
+                client_id=self.credentials['client_id'],
+                client_secret=self.credentials['client_secret'],
+                redirect_uri=self.credentials['redirect_uri'],
                 scope="playlist-modify-public playlist-modify-private user-read-private",
                 requests_timeout=10,
             )
@@ -461,35 +499,40 @@ class SpotifyClient:
             logger.error(f"Failed to add tracks to playlist {playlist_id}: {e}")
             raise
 
-    def get_auth_url(self) -> str:
+    def get_auth_url(self, state: Optional[str] = None) -> str:
         """Get Spotify authorization URL for web-based OAuth flow.
+
+        Args:
+            state: Optional state parameter to pass through OAuth flow (for guild_id and user_id).
 
         Returns:
             Authorization URL to redirect user to.
         """
         auth_manager = SpotifyOAuth(
-            client_id=Config.SPOTIFY_CLIENT_ID,
-            client_secret=Config.SPOTIFY_CLIENT_SECRET,
-            redirect_uri=Config.SPOTIFY_REDIRECT_URI,
+            client_id=self.credentials['client_id'],
+            client_secret=self.credentials['client_secret'],
+            redirect_uri=self.credentials['redirect_uri'],
             scope="playlist-modify-public playlist-modify-private user-read-private",
             requests_timeout=10,
+            state=state,
         )
         return auth_manager.get_authorize_url()
 
-    def authenticate_with_code(self, code: str):
+    def authenticate_with_code(self, code: str, user_id: Optional[int] = None):
         """Complete OAuth flow by exchanging authorization code for tokens.
 
         Args:
             code: Authorization code from Spotify callback.
+            user_id: Discord user ID who authorized (optional).
 
         Raises:
             Exception: If token exchange fails.
         """
         try:
             auth_manager = SpotifyOAuth(
-                client_id=Config.SPOTIFY_CLIENT_ID,
-                client_secret=Config.SPOTIFY_CLIENT_SECRET,
-                redirect_uri=Config.SPOTIFY_REDIRECT_URI,
+                client_id=self.credentials['client_id'],
+                client_secret=self.credentials['client_secret'],
+                redirect_uri=self.credentials['redirect_uri'],
                 scope="playlist-modify-public playlist-modify-private user-read-private",
                 requests_timeout=10,
             )
@@ -497,14 +540,15 @@ class SpotifyClient:
             # Exchange code for tokens
             token_info = auth_manager.get_access_token(code, as_dict=True, check_cache=False)
 
-            # Save tokens to database
+            # Save tokens to database with guild_id and user_id
             self._save_tokens_to_db(
                 token_info['access_token'],
                 token_info['refresh_token'],
-                token_info['expires_at']
+                token_info['expires_at'],
+                user_id=user_id
             )
 
-            logger.info("Spotify tokens saved to database successfully")
+            logger.info(f"Spotify tokens saved for guild {self.guild_id} by user {user_id}")
 
             # Re-initialize the client with new tokens
             self.sp = self._authenticate()
