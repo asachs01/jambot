@@ -91,8 +91,21 @@ class Database:
             approver_ids TEXT NOT NULL,
             channel_id INTEGER,
             playlist_name_template TEXT,
+            spotify_client_id TEXT,
+            spotify_client_secret TEXT,
+            spotify_redirect_uri TEXT,
             updated_at TIMESTAMP NOT NULL,
             updated_by INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS spotify_tokens (
+            guild_id INTEGER PRIMARY KEY,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            authorized_by INTEGER NOT NULL,
+            created_at INTEGER DEFAULT (strftime('%s', 'now')),
+            updated_at INTEGER DEFAULT (strftime('%s', 'now'))
         );
 
         CREATE INDEX IF NOT EXISTS idx_songs_guild_title ON songs(guild_id, song_title);
@@ -100,6 +113,7 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_setlist_id ON setlist_songs(setlist_id);
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_song_id ON setlist_songs(song_id);
         CREATE INDEX IF NOT EXISTS idx_bot_configuration_guild_id ON bot_configuration(guild_id);
+        CREATE INDEX IF NOT EXISTS idx_spotify_tokens_guild_id ON spotify_tokens(guild_id);
         """
 
         with self.get_connection() as conn:
@@ -181,6 +195,49 @@ class Database:
             if 'playlist_name_template' not in config_columns:
                 conn.execute("ALTER TABLE bot_configuration ADD COLUMN playlist_name_template TEXT")
                 logger.info("Added playlist_name_template column to bot_configuration table")
+
+            if 'spotify_client_id' not in config_columns:
+                conn.execute("ALTER TABLE bot_configuration ADD COLUMN spotify_client_id TEXT")
+                logger.info("Added spotify_client_id column to bot_configuration table")
+
+            if 'spotify_client_secret' not in config_columns:
+                conn.execute("ALTER TABLE bot_configuration ADD COLUMN spotify_client_secret TEXT")
+                logger.info("Added spotify_client_secret column to bot_configuration table")
+
+            if 'spotify_redirect_uri' not in config_columns:
+                conn.execute("ALTER TABLE bot_configuration ADD COLUMN spotify_redirect_uri TEXT")
+                logger.info("Added spotify_redirect_uri column to bot_configuration table")
+
+            # Migration for spotify_tokens table - convert old single-token table to multi-guild
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='spotify_tokens'")
+            if cursor.fetchone():
+                # Check if this is the old schema (has 'id' column instead of 'guild_id')
+                cursor = conn.execute("PRAGMA table_info(spotify_tokens)")
+                spotify_columns = [row[1] for row in cursor.fetchall()]
+
+                if 'id' in spotify_columns and 'guild_id' not in spotify_columns:
+                    logger.info("Migrating spotify_tokens table from single-guild to multi-guild schema...")
+
+                    # Get the old token data
+                    cursor = conn.execute("SELECT access_token, refresh_token, expires_at FROM spotify_tokens WHERE id = 1")
+                    old_token = cursor.fetchone()
+
+                    # Drop old table
+                    conn.execute("DROP TABLE spotify_tokens")
+
+                    # Create new table with guild_id (already done in schema above)
+                    # Note: We can't automatically assign to a guild since we don't know which one
+                    # Users will need to re-authorize via /jambot-spotify-setup
+
+                    if old_token:
+                        logger.warning(
+                            "Old Spotify tokens found but cannot be automatically migrated to multi-guild schema. "
+                            "Users must re-authorize Spotify using /jambot-spotify-setup command."
+                        )
+                    else:
+                        logger.info("No old Spotify tokens found, migration complete")
+
+                    logger.info("Migrated spotify_tokens table successfully")
 
             logger.info("Database schema initialized successfully")
 
@@ -357,6 +414,9 @@ class Database:
         approver_ids: List[int],
         channel_id: Optional[int] = None,
         playlist_name_template: Optional[str] = None,
+        spotify_client_id: Optional[str] = None,
+        spotify_client_secret: Optional[str] = None,
+        spotify_redirect_uri: Optional[str] = None,
         updated_by: Optional[int] = None
     ):
         """Save bot configuration for a guild.
@@ -367,6 +427,9 @@ class Database:
             approver_ids: List of user IDs who can approve songs.
             channel_id: Optional channel ID where playlists should be posted.
             playlist_name_template: Optional template for playlist names (use {date} and {time} as placeholders).
+            spotify_client_id: Optional Spotify app client ID for this guild.
+            spotify_client_secret: Optional Spotify app client secret for this guild.
+            spotify_redirect_uri: Optional Spotify redirect URI for this guild.
             updated_by: User ID who made the update (optional).
         """
         # Convert lists to JSON strings for storage
@@ -379,14 +442,17 @@ class Database:
             # Use INSERT OR REPLACE to handle both create and update
             conn.execute(
                 """INSERT OR REPLACE INTO bot_configuration
-                   (guild_id, jam_leader_ids, approver_ids, channel_id, playlist_name_template, updated_at, updated_by)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (guild_id, jam_leader_ids_json, approver_ids_json, channel_id, playlist_name_template, updated_at, updated_by or 0)
+                   (guild_id, jam_leader_ids, approver_ids, channel_id, playlist_name_template,
+                    spotify_client_id, spotify_client_secret, spotify_redirect_uri, updated_at, updated_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (guild_id, jam_leader_ids_json, approver_ids_json, channel_id, playlist_name_template,
+                 spotify_client_id, spotify_client_secret, spotify_redirect_uri, updated_at, updated_by or 0)
             )
             logger.info(
                 f"Saved bot configuration for guild {guild_id}: "
                 f"{len(jam_leader_ids)} jam leaders, {len(approver_ids)} approvers, "
-                f"channel: {channel_id}, playlist template: {playlist_name_template}"
+                f"channel: {channel_id}, playlist template: {playlist_name_template}, "
+                f"spotify credentials: {'configured' if spotify_client_id else 'not configured'}"
             )
 
     def get_bot_configuration(self, guild_id: int) -> Optional[Dict[str, Any]]:

@@ -7,29 +7,12 @@ from src.logger import logger
 from src.database import Database
 
 
-class ConfigurationModal(Modal, title="Configure Jambot"):
-    """Modal for configuring jam leaders and approvers.
+class AdvancedSettingsModal(Modal, title="Advanced Settings"):
+    """Modal for configuring optional advanced settings.
 
-    Note: Discord modals don't support user select components directly.
-    Users will need to input user IDs. We'll provide a helper command
-    to get user IDs easily.
+    Configures playlist channel and playlist name template.
+    Basic configuration must be done first with /jambot-setup.
     """
-
-    jam_leaders = TextInput(
-        label="Jam Leader User IDs",
-        placeholder="Enter user IDs separated by commas (e.g., 123456789, 987654321)",
-        style=discord.TextStyle.paragraph,
-        required=True,
-        max_length=500
-    )
-
-    approvers = TextInput(
-        label="Song Approver User IDs",
-        placeholder="Enter user IDs separated by commas (e.g., 123456789, 987654321)",
-        style=discord.TextStyle.paragraph,
-        required=True,
-        max_length=500
-    )
 
     channel_id = TextInput(
         label="Playlist Channel ID (optional)",
@@ -46,6 +29,146 @@ class ConfigurationModal(Modal, title="Configure Jambot"):
         required=False,
         max_length=100,
         default="Bluegrass Jam {date}"
+    )
+
+    def __init__(self, db: Database):
+        """Initialize the advanced settings modal.
+
+        Args:
+            db: Database instance for storing configuration.
+        """
+        super().__init__()
+        self.db = db
+
+    async def on_submit(self, interaction: discord.Interaction):
+        """Handle modal submission.
+
+        Args:
+            interaction: Discord interaction object.
+        """
+        try:
+            guild_id = interaction.guild_id
+
+            # Get existing configuration
+            config = self.db.get_bot_configuration(guild_id)
+
+            if not config:
+                await interaction.response.send_message(
+                    "❌ Error: Please run `/jambot-setup` first to configure basic settings.",
+                    ephemeral=True
+                )
+                return
+
+            # Parse optional channel ID
+            channel_id_value = None
+            if self.channel_id.value and self.channel_id.value.strip():
+                try:
+                    channel_id_value = int(self.channel_id.value.strip())
+                    # Validate channel exists in guild
+                    channel = interaction.guild.get_channel(channel_id_value)
+                    if not channel:
+                        await interaction.response.send_message(
+                            f"❌ Error: Channel ID {channel_id_value} not found in this server.",
+                            ephemeral=True
+                        )
+                        return
+                except ValueError:
+                    await interaction.response.send_message(
+                        f"❌ Error: Invalid channel ID format: {self.channel_id.value}",
+                        ephemeral=True
+                    )
+                    return
+
+            # Parse optional playlist name template
+            playlist_template = None
+            if self.playlist_name_template.value and self.playlist_name_template.value.strip():
+                playlist_template = self.playlist_name_template.value.strip()
+
+            # Update configuration with advanced settings
+            self.db.save_bot_configuration(
+                guild_id=guild_id,
+                jam_leader_ids=config['jam_leader_ids'],
+                approver_ids=config['approver_ids'],
+                channel_id=channel_id_value,
+                playlist_name_template=playlist_template,
+                spotify_client_id=config.get('spotify_client_id'),
+                spotify_client_secret=config.get('spotify_client_secret'),
+                spotify_redirect_uri=config.get('spotify_redirect_uri'),
+                updated_by=interaction.user.id
+            )
+
+            logger.info(
+                f"Advanced settings updated by {interaction.user.id} for guild {guild_id}: "
+                f"channel={channel_id_value}, template={playlist_template}"
+            )
+
+            confirm_msg = "✅ **Advanced settings updated successfully!**\n\n"
+
+            if channel_id_value:
+                confirm_msg += f"**Playlist Channel:** <#{channel_id_value}>\n"
+            else:
+                confirm_msg += "**Playlist Channel:** Original message channel\n"
+
+            if playlist_template:
+                confirm_msg += f"**Playlist Name:** {playlist_template}\n"
+            else:
+                confirm_msg += "**Playlist Name:** Bluegrass Jam {date} (default)\n"
+
+            await interaction.response.send_message(confirm_msg, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Error processing advanced settings modal: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Error saving advanced settings: {str(e)}",
+                ephemeral=True
+            )
+
+
+class ConfigurationModal(Modal, title="Configure Jambot"):
+    """Modal for essential Jambot configuration.
+
+    Configures jam leaders, approvers, and Spotify app credentials.
+    For advanced settings (playlist channel, name template), use /jambot-settings.
+    """
+
+    jam_leaders = TextInput(
+        label="Jam Leader User IDs",
+        placeholder="User IDs separated by commas (e.g., 123456789, 987654321)",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500
+    )
+
+    approvers = TextInput(
+        label="Song Approver User IDs",
+        placeholder="User IDs separated by commas (e.g., 123456789, 987654321)",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500
+    )
+
+    spotify_client_id = TextInput(
+        label="Spotify Client ID",
+        placeholder="From developer.spotify.com/dashboard",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=100
+    )
+
+    spotify_client_secret = TextInput(
+        label="Spotify Client Secret",
+        placeholder="From developer.spotify.com/dashboard (stored securely)",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=100
+    )
+
+    spotify_redirect_uri = TextInput(
+        label="Spotify Redirect URI (optional)",
+        placeholder="Leave blank to use default web server URL",
+        style=discord.TextStyle.short,
+        required=False,
+        max_length=200
     )
 
     def __init__(self, db: Database):
@@ -95,46 +218,41 @@ class ConfigurationModal(Modal, title="Configure Jambot"):
                 )
                 return
 
-            # Parse optional channel ID
-            channel_id_value = None
-            if self.channel_id.value and self.channel_id.value.strip():
-                try:
-                    channel_id_value = int(self.channel_id.value.strip())
-                    # Validate channel exists in guild
-                    channel = interaction.guild.get_channel(channel_id_value)
-                    if not channel:
-                        await interaction.response.send_message(
-                            f"❌ Error: Channel ID {channel_id_value} not found in this server.",
-                            ephemeral=True
-                        )
-                        return
-                except ValueError:
-                    await interaction.response.send_message(
-                        f"❌ Error: Invalid channel ID format: {self.channel_id.value}",
-                        ephemeral=True
-                    )
-                    return
+            # Parse and validate Spotify credentials
+            spotify_client_id = self.spotify_client_id.value.strip() if self.spotify_client_id.value else None
+            spotify_client_secret = self.spotify_client_secret.value.strip() if self.spotify_client_secret.value else None
+            spotify_redirect_uri = self.spotify_redirect_uri.value.strip() if self.spotify_redirect_uri.value else None
 
-            # Parse optional playlist name template
-            playlist_template = None
-            if self.playlist_name_template.value and self.playlist_name_template.value.strip():
-                playlist_template = self.playlist_name_template.value.strip()
+            if not spotify_client_id or not spotify_client_secret:
+                await interaction.response.send_message(
+                    "❌ Error: Spotify Client ID and Client Secret are required.",
+                    ephemeral=True
+                )
+                return
+
+            # Get existing configuration to preserve advanced settings
+            guild_id = interaction.guild_id
+            existing_config = self.db.get_bot_configuration(guild_id)
+            channel_id_value = existing_config.get('channel_id') if existing_config else None
+            playlist_template = existing_config.get('playlist_name_template') if existing_config else None
 
             # Store configuration in database
-            guild_id = interaction.guild_id
             self.db.save_bot_configuration(
                 guild_id=guild_id,
                 jam_leader_ids=jam_leader_ids,
                 approver_ids=approver_ids,
                 channel_id=channel_id_value,
                 playlist_name_template=playlist_template,
+                spotify_client_id=spotify_client_id,
+                spotify_client_secret=spotify_client_secret,
+                spotify_redirect_uri=spotify_redirect_uri,
                 updated_by=interaction.user.id
             )
 
             logger.info(
                 f"Configuration updated by {interaction.user.id} for guild {guild_id}: "
                 f"jam_leaders={jam_leader_ids}, approvers={approver_ids}, "
-                f"channel={channel_id_value}, template={playlist_template}"
+                f"spotify_configured=True"
             )
 
             # Build confirmation message
@@ -142,16 +260,14 @@ class ConfigurationModal(Modal, title="Configure Jambot"):
             approvers_mentions = ", ".join([f"<@{uid}>" for uid in approver_ids])
 
             confirm_msg = (
-                f"✅ **Configuration updated successfully!**\n\n"
+                f"✅ **Jambot configured successfully!**\n\n"
                 f"**Jam Leaders:** {jam_leaders_mentions}\n"
-                f"**Song Approvers:** {approvers_mentions}"
+                f"**Song Approvers:** {approvers_mentions}\n"
+                f"**Spotify Client ID:** {spotify_client_id[:8]}...\n"
+                f"**Spotify Client Secret:** {'*' * 8}\n\n"
+                f"**Next step:** Run `/jambot-spotify-setup` to authorize Spotify and start creating playlists!\n\n"
+                f"_Use `/jambot-settings` to configure playlist channel and name template._"
             )
-
-            if channel_id_value:
-                confirm_msg += f"\n**Playlist Channel:** <#{channel_id_value}>"
-
-            if playlist_template:
-                confirm_msg += f"\n**Playlist Name:** {playlist_template}"
 
             await interaction.response.send_message(confirm_msg, ephemeral=True)
 
@@ -294,5 +410,131 @@ class JambotCommands:
                 f"Copy this ID to use in `/jambot-setup`",
                 ephemeral=True
             )
+
+        @self.tree.command(
+            name="jambot-spotify-setup",
+            description="Connect Spotify to this Discord server (Admin only)"
+        )
+        @app_commands.checks.has_permissions(administrator=True)
+        async def spotify_setup_command(interaction: discord.Interaction):
+            """Generate Spotify authorization link for this guild.
+
+            Args:
+                interaction: Discord interaction object.
+            """
+            try:
+                logger.info(
+                    f"Spotify setup command invoked by {interaction.user.id} "
+                    f"in guild {interaction.guild_id}"
+                )
+
+                # Generate auth URL for this guild and user
+                from src.config import Config
+                auth_url = f"{Config.SPOTIFY_REDIRECT_URI.rsplit('/', 1)[0]}/spotify/auth/{interaction.guild_id}/{interaction.user.id}"
+
+                # Send DM to user with authorization link
+                try:
+                    await interaction.user.send(
+                        f"🎵 **Spotify Authorization for {interaction.guild.name}**\n\n"
+                        f"Click the link below to connect your Spotify account:\n"
+                        f"{auth_url}\n\n"
+                        f"This will allow JamBot to create playlists on your behalf for setlists posted in {interaction.guild.name}.\n\n"
+                        f"**Important:** Only click this link if you trust this server and want to authorize Spotify access."
+                    )
+
+                    await interaction.response.send_message(
+                        "✅ I've sent you a DM with the Spotify authorization link!",
+                        ephemeral=True
+                    )
+
+                except discord.Forbidden:
+                    # User has DMs disabled, show link in ephemeral message instead
+                    await interaction.response.send_message(
+                        f"🎵 **Spotify Authorization Link**\n\n"
+                        f"Click here to connect Spotify: {auth_url}\n\n"
+                        f"(I tried to DM you, but your DMs are disabled. This link is only visible to you.)",
+                        ephemeral=True
+                    )
+
+            except Exception as e:
+                logger.error(f"Error in spotify-setup command: {e}", exc_info=True)
+                await interaction.response.send_message(
+                    f"❌ Error generating Spotify authorization link: {str(e)}",
+                    ephemeral=True
+                )
+
+        @spotify_setup_command.error
+        async def spotify_setup_error(
+            interaction: discord.Interaction,
+            error: app_commands.AppCommandError
+        ):
+            """Handle errors for the spotify-setup command.
+
+            Args:
+                interaction: Discord interaction object.
+                error: The error that occurred.
+            """
+            if isinstance(error, app_commands.errors.MissingPermissions):
+                await interaction.response.send_message(
+                    "❌ You need administrator permissions to use this command.",
+                    ephemeral=True
+                )
+                logger.warning(
+                    f"User {interaction.user.id} attempted to use spotify-setup command "
+                    f"without permissions"
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ An error occurred while processing the command.",
+                    ephemeral=True
+                )
+                logger.error(f"Error in spotify-setup command: {error}", exc_info=True)
+
+        @self.tree.command(
+            name="jambot-settings",
+            description="Configure advanced playlist settings (Admin only)"
+        )
+        @app_commands.checks.has_permissions(administrator=True)
+        async def settings_command(interaction: discord.Interaction):
+            """Open advanced settings modal for playlist configuration.
+
+            Args:
+                interaction: Discord interaction object.
+            """
+            logger.info(
+                f"Settings command invoked by {interaction.user.id} "
+                f"in guild {interaction.guild_id}"
+            )
+
+            # Send the advanced settings modal
+            modal = AdvancedSettingsModal(self.db)
+            await interaction.response.send_modal(modal)
+
+        @settings_command.error
+        async def settings_error(
+            interaction: discord.Interaction,
+            error: app_commands.AppCommandError
+        ):
+            """Handle errors for the settings command.
+
+            Args:
+                interaction: Discord interaction object.
+                error: The error that occurred.
+            """
+            if isinstance(error, app_commands.errors.MissingPermissions):
+                await interaction.response.send_message(
+                    "❌ You need administrator permissions to use this command.",
+                    ephemeral=True
+                )
+                logger.warning(
+                    f"User {interaction.user.id} attempted to use settings command "
+                    f"without permissions"
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ An error occurred while processing the command.",
+                    ephemeral=True
+                )
+                logger.error(f"Error in settings command: {error}", exc_info=True)
 
         logger.info("Slash commands registered")
