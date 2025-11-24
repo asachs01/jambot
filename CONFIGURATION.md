@@ -20,31 +20,73 @@ Use the `/jambot-getid` command to get Discord user IDs:
 
 This will show you the user's ID. Copy the ID for the next step.
 
-#### Step 2: Configure Jambot
+#### Step 2: Create Spotify Developer App
 
-Administrators can use the `/jambot-setup` command to open a configuration modal:
+Before configuring Jambot, create a Spotify Developer app:
+
+1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+2. Click "Create App"
+3. Fill in App Name (e.g., "MyServer JamBot") and Description
+4. Add Redirect URI: `https://your-jambot-domain.com/callback`
+5. Save and copy your **Client ID** and **Client Secret**
+
+⚠️ **Important**: Each Discord server needs its own Spotify Developer app to avoid rate limiting.
+
+#### Step 3: Configure Jambot Essential Settings
+
+Administrators can use the `/jambot-setup` command to configure all essential settings:
 
 ```
 /jambot-setup
 ```
 
-This opens a modal with two fields:
+This opens a modal with five fields:
 
-- **Jam Leader User IDs**: Enter the user IDs of people who can post setlists (comma-separated)
-- **Song Approver User IDs**: Enter the user IDs of people who can approve songs (comma-separated)
+- **Jam Leader User IDs**: Users who can post setlists (comma-separated)
+- **Song Approver User IDs**: Users who can approve songs (comma-separated)
+- **Spotify Client ID**: From your Spotify Developer Dashboard
+- **Spotify Client Secret**: From your Spotify Developer Dashboard (stored securely)
+- **Spotify Redirect URI**: Leave blank to use default web server URL
 
 **Example:**
 ```
 Jam Leaders: 123456789012345678, 987654321098765432
 Approvers: 111222333444555666, 777888999000111222
+Client ID: abc123def456...
+Client Secret: xyz789uvw012...
+Redirect URI: (leave blank for default)
 ```
 
+#### Step 4: Authorize Spotify
+
+After configuring essential settings, authorize Spotify:
+
+```
+/jambot-spotify-setup
+```
+
+This sends you a private authorization link. Click it to connect your Spotify account.
+
+#### Step 5: Configure Advanced Settings (Optional)
+
+For playlist channel and name template customization:
+
+```
+/jambot-settings
+```
+
+This opens a modal with optional fields:
+- **Playlist Channel ID**: Channel where playlists should be posted (optional)
+- **Playlist Name Template**: Custom template using {date} and {time} placeholders (optional)
+
 #### Features:
+- ✅ Per-server Spotify apps (avoids rate limiting)
 - ✅ Multiple jam leaders and approvers supported
-- ✅ Real-time validation of user IDs
+- ✅ Real-time validation of user IDs and Spotify credentials
 - ✅ Configuration stored per-server in database
 - ✅ No bot restart required
 - ✅ Admin-only access
+- ✅ Separate advanced settings for optional customization
 
 ### Method 2: Environment Variables (Legacy)
 
@@ -80,8 +122,13 @@ Configuration is stored in the SQLite database in the `bot_configuration` table:
 CREATE TABLE bot_configuration (
     id INTEGER PRIMARY KEY,
     guild_id INTEGER UNIQUE NOT NULL,
-    jam_leader_ids TEXT NOT NULL,      -- JSON array
-    approver_ids TEXT NOT NULL,        -- JSON array
+    jam_leader_ids TEXT NOT NULL,           -- JSON array
+    approver_ids TEXT NOT NULL,             -- JSON array
+    channel_id INTEGER,                     -- Optional playlist channel
+    playlist_name_template TEXT,            -- Optional custom template
+    spotify_client_id TEXT,                 -- Per-guild Spotify app
+    spotify_client_secret TEXT,             -- Per-guild Spotify secret
+    spotify_redirect_uri TEXT,              -- Per-guild redirect URI
     updated_at TIMESTAMP NOT NULL,
     updated_by INTEGER NOT NULL
 );

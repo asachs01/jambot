@@ -69,17 +69,23 @@ python -m src.main
 
 ### Discord Configuration (Recommended Method)
 
-Once your bot is running, configure jam leaders and approvers directly in Discord:
+Once your bot is running, configure everything directly in Discord:
 
 1. **Get User IDs**: Use `/jambot-getid @username` to get Discord user IDs
-2. **Configure**: Run `/jambot-setup` (admin only) to open the configuration modal
-3. **Enter User IDs**: Add jam leader and approver user IDs (comma-separated)
+2. **Configure Essential Settings**: Run `/jambot-setup` (admin only) to configure:
+   - Jam leader user IDs (comma-separated)
+   - Song approver user IDs (comma-separated)
+   - Spotify Client ID (from your Spotify Developer app)
+   - Spotify Client Secret (from your Spotify Developer app)
+   - Spotify Redirect URI (optional, leave blank for default)
+3. **Authorize Spotify**: Run `/jambot-spotify-setup` to connect your Spotify account
+4. **Configure Advanced Settings** (Optional): Run `/jambot-settings` to set playlist channel and name template
 
 **Example:**
 - Jam Leaders: `123456789012345678, 987654321098765432`
 - Approvers: `111222333444555666, 777888999000111222`
 
-✅ **Benefits**: Multiple users, no restart required, per-server configuration
+✅ **Benefits**: Per-server Spotify apps (no rate limiting), multiple users, no restart required, per-server configuration
 
 See [CONFIGURATION.md](CONFIGURATION.md) for detailed configuration guide.
 
