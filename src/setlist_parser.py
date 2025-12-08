@@ -16,8 +16,10 @@ class SetlistParser:
 
     # Pattern matches songs with optional number, song name, and key in parentheses
     # Examples: "1. Will the Circle (G)" or "Will the Circle (G)"
+    # Also handles optional notes after the key: "Little Maggie (A) faster"
+    # Key pattern matches musical keys: A-G with optional #/b and m/M/maj/min modifiers
     SONG_LINE_PATTERN = re.compile(
-        r'^\s*(?:(\d+)\.\s+)?(.+?)\s+\(([^)]+)\)\s*$',
+        r'^\s*(?:(\d+)\.\s+)?(.+?)\s+\(([A-Ga-g][#b]?[mM]?(?:aj|in)?)\)(.*)$',
         re.MULTILINE
     )
 
