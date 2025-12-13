@@ -642,8 +642,8 @@ class JambotCommands:
                     ephemeral=True
                 )
 
-                # Process the setlist
-                await self.bot.handle_setlist_message(message)
+                # Process the setlist, passing the user who triggered it
+                await self.bot.handle_setlist_message(message, triggered_by_user_id=interaction.user.id)
 
                 logger.info(
                     f"Successfully triggered setlist processing for message {message_id} "

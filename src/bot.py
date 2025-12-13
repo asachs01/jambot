@@ -201,11 +201,12 @@ class JamBot(commands.Bot):
                 "Please try again or contact an administrator."
             )
 
-    async def handle_setlist_message(self, message: discord.Message):
+    async def handle_setlist_message(self, message: discord.Message, triggered_by_user_id: int = None):
         """Process a detected setlist message.
 
         Args:
             message: Discord message containing the setlist.
+            triggered_by_user_id: Optional user ID who triggered this manually (for /jambot-process).
         """
         try:
             # Parse the setlist
@@ -232,7 +233,8 @@ class JamBot(commands.Bot):
                 setlist_data=setlist_data,
                 song_matches=song_matches,
                 original_channel_id=message.channel.id,
-                guild_id=guild_id
+                guild_id=guild_id,
+                triggered_by_user_id=triggered_by_user_id
             )
 
         except Exception as e:
@@ -298,7 +300,8 @@ class JamBot(commands.Bot):
         setlist_data: Dict,
         song_matches: List[Dict],
         original_channel_id: int,
-        guild_id: int
+        guild_id: int,
+        triggered_by_user_id: int = None
     ):
         """Send approval workflow DM to all configured approvers.
 
@@ -307,16 +310,23 @@ class JamBot(commands.Bot):
             song_matches: List of song matches from database/Spotify.
             original_channel_id: ID of channel where setlist was posted.
             guild_id: Discord guild (server) ID.
+            triggered_by_user_id: Optional user ID who triggered this (will also receive workflow).
         """
         try:
 
             # Get approver IDs from database
             approver_ids = self.db.get_approver_ids(guild_id)
+            logger.info(f"Approver IDs from database for guild {guild_id}: {approver_ids}")
 
             # Fall back to env var if no approvers configured
             if not approver_ids and Config.DISCORD_ADMIN_ID:
                 approver_ids = [int(Config.DISCORD_ADMIN_ID)]
                 logger.info("Using fallback admin from environment variable")
+
+            # If triggered manually, ensure that user also gets the workflow
+            if triggered_by_user_id and triggered_by_user_id not in approver_ids:
+                approver_ids = list(approver_ids) + [triggered_by_user_id]
+                logger.info(f"Added triggering user {triggered_by_user_id} to approver list")
 
             if not approver_ids:
                 logger.error(
@@ -324,6 +334,8 @@ class JamBot(commands.Bot):
                     "Use /jambot-setup to add approvers who can approve Spotify playlists."
                 )
                 return
+
+            logger.info(f"Sending approval workflow to {len(approver_ids)} user(s): {approver_ids}")
 
             # Send workflow to all approvers
             for approver_id in approver_ids:
@@ -336,7 +348,7 @@ class JamBot(commands.Bot):
                         guild_id
                     )
                 except Exception as e:
-                    logger.error(f"Failed to send approval workflow to user {approver_id}: {e}")
+                    logger.error(f"Failed to send approval workflow to user {approver_id}: {e}", exc_info=True)
 
         except Exception as e:
             logger.error(f"Error sending approval workflow: {e}", exc_info=True)
