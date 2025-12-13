@@ -428,3 +428,20 @@ class Database:
         if config:
             return config['approver_ids']
         return []
+
+    def is_spotify_authorized(self, guild_id: int) -> bool:
+        """Check if Spotify tokens exist for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            True if Spotify tokens exist, False otherwise.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM spotify_tokens WHERE guild_id = %s",
+                (guild_id,)
+            )
+            return cursor.fetchone() is not None

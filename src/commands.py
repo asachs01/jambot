@@ -569,8 +569,7 @@ class JambotCommands:
                 channel_id = config.get('channel_id')
                 playlist_template = config.get('playlist_name_template') or 'Bluegrass Jam {date}'
                 spotify_configured = bool(config.get('spotify_client_id'))
-                spotify_refresh_token = config.get('spotify_refresh_token')
-                spotify_authorized = bool(spotify_refresh_token)
+                spotify_authorized = self.db.is_spotify_authorized(interaction.guild_id)
 
                 # Format user mentions
                 jam_leaders_str = ', '.join([f"<@{uid}>" for uid in jam_leader_ids]) if jam_leader_ids else '_None configured_'
