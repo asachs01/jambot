@@ -537,4 +537,142 @@ class JambotCommands:
                 )
                 logger.error(f"Error in settings command: {error}", exc_info=True)
 
+        @self.tree.command(
+            name="jambot-process",
+            description="Process a setlist message manually (Approver only)"
+        )
+        @app_commands.describe(
+            message_link="Discord message link (right-click message > Copy Message Link)"
+        )
+        async def process_command(
+            interaction: discord.Interaction,
+            message_link: str
+        ):
+            """Manually process a setlist message.
+
+            Args:
+                interaction: Discord interaction object.
+                message_link: Discord message link to process.
+            """
+            try:
+                logger.info(
+                    f"Process command invoked by {interaction.user.id} "
+                    f"in guild {interaction.guild_id} with link: {message_link}"
+                )
+
+                # Check if user is an approver
+                approver_ids = self.db.get_approver_ids(interaction.guild_id)
+                if interaction.user.id not in approver_ids:
+                    await interaction.response.send_message(
+                        "❌ Only song approvers can use this command.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Parse Discord message link
+                # Format: https://discord.com/channels/{guild_id}/{channel_id}/{message_id}
+                import re
+                link_pattern = re.compile(
+                    r'https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)'
+                )
+                match = link_pattern.match(message_link.strip())
+
+                if not match:
+                    await interaction.response.send_message(
+                        "❌ Invalid message link format.\n"
+                        "Right-click a message and select 'Copy Message Link' to get the correct format.",
+                        ephemeral=True
+                    )
+                    return
+
+                link_guild_id = int(match.group(1))
+                channel_id = int(match.group(2))
+                message_id = int(match.group(3))
+
+                # Verify the message is from this guild
+                if link_guild_id != interaction.guild_id:
+                    await interaction.response.send_message(
+                        "❌ That message is from a different server.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Fetch the channel and message
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    await interaction.response.send_message(
+                        "❌ Could not find that channel. Make sure the bot has access to it.",
+                        ephemeral=True
+                    )
+                    return
+
+                try:
+                    message = await channel.fetch_message(message_id)
+                except discord.NotFound:
+                    await interaction.response.send_message(
+                        "❌ Could not find that message. It may have been deleted.",
+                        ephemeral=True
+                    )
+                    return
+                except discord.Forbidden:
+                    await interaction.response.send_message(
+                        "❌ I don't have permission to read messages in that channel.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Check if the message is a valid setlist
+                if not self.bot.parser.is_setlist_message(message.content):
+                    await interaction.response.send_message(
+                        "❌ That message doesn't appear to be a setlist.\n"
+                        "Expected format: \"Here's the setlist for the [time] jam on [date].\"",
+                        ephemeral=True
+                    )
+                    return
+
+                # Acknowledge the command immediately
+                await interaction.response.send_message(
+                    f"✅ Processing setlist from {message.author.mention}...\n"
+                    f"Check your DMs for the approval workflow.",
+                    ephemeral=True
+                )
+
+                # Process the setlist
+                await self.bot.handle_setlist_message(message)
+
+                logger.info(
+                    f"Successfully triggered setlist processing for message {message_id} "
+                    f"by {interaction.user.id}"
+                )
+
+            except Exception as e:
+                logger.error(f"Error in process command: {e}", exc_info=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        f"❌ Error processing setlist: {str(e)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        f"❌ Error processing setlist: {str(e)}",
+                        ephemeral=True
+                    )
+
+        @process_command.error
+        async def process_error(
+            interaction: discord.Interaction,
+            error: app_commands.AppCommandError
+        ):
+            """Handle errors for the process command.
+
+            Args:
+                interaction: Discord interaction object.
+                error: The error that occurred.
+            """
+            await interaction.response.send_message(
+                "❌ An error occurred while processing the command.",
+                ephemeral=True
+            )
+            logger.error(f"Error in process command: {error}", exc_info=True)
+
         logger.info("Slash commands registered")
