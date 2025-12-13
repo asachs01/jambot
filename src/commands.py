@@ -560,11 +560,16 @@ class JambotCommands:
                     f"in guild {interaction.guild_id} with link: {message_link}"
                 )
 
-                # Check if user is an approver
+                # Check if user is an approver or admin
                 approver_ids = self.db.get_approver_ids(interaction.guild_id)
-                if interaction.user.id not in approver_ids:
+                is_approver = interaction.user.id in approver_ids
+                is_admin = interaction.user.guild_permissions.administrator
+
+                if not is_approver and not is_admin:
                     await interaction.response.send_message(
-                        "❌ Only song approvers can use this command.",
+                        f"❌ Only song approvers or administrators can use this command.\n"
+                        f"Your ID: `{interaction.user.id}`\n"
+                        f"Configured approvers: `{approver_ids}`",
                         ephemeral=True
                     )
                     return
