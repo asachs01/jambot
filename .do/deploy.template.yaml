@@ -39,9 +39,9 @@ spec:
         - key: SPOTIFY_REDIRECT_URI
           scope: RUN_TIME
           value: ${APP_URL}/callback
-        - key: DATABASE_PATH
+        - key: DATABASE_URL
           scope: RUN_TIME
-          value: /app/data/jambot.db
+          type: SECRET
         - key: PORT
           scope: RUN_TIME
           value: "8080"
