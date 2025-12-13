@@ -23,9 +23,31 @@ class Config:
     # Database Configuration
     # PostgreSQL connection URL (preferred for production)
     # Format: postgresql://user:password@host:port/database?sslmode=require
-    DATABASE_URL = os.getenv('DATABASE_URL')
+    # Can also be built from individual PG* environment variables
+    @staticmethod
+    def _build_database_url():
+        """Build DATABASE_URL from environment variables."""
+        # First check for explicit DATABASE_URL
+        url = os.getenv('DATABASE_URL')
+        if url:
+            return url
 
-    # Legacy SQLite path (used if DATABASE_URL not set)
+        # Build from individual PG* variables
+        user = os.getenv('PGUSER')
+        password = os.getenv('PGPASS')
+        host = os.getenv('PGHOST')
+        port = os.getenv('PGPORT', '25060')
+        database = os.getenv('PGDATABASE', 'defaultdb')
+        sslmode = os.getenv('PGSSLMODE', 'require')
+
+        if user and password and host:
+            return f'postgresql://{user}:{password}@{host}:{port}/{database}?sslmode={sslmode}'
+
+        return None
+
+    DATABASE_URL = _build_database_url.__func__()
+
+    # Legacy SQLite path (no longer used - PostgreSQL required)
     DATABASE_PATH = os.getenv('DATABASE_PATH', '/app/data/jambot.db')
 
     # Logging Configuration
