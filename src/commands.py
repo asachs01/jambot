@@ -538,6 +538,80 @@ class JambotCommands:
                 logger.error(f"Error in settings command: {error}", exc_info=True)
 
         @self.tree.command(
+            name="jambot-status",
+            description="Show current Jambot configuration"
+        )
+        async def status_command(interaction: discord.Interaction):
+            """Show current Jambot configuration for this server.
+
+            Args:
+                interaction: Discord interaction object.
+            """
+            try:
+                logger.info(
+                    f"Status command invoked by {interaction.user.id} "
+                    f"in guild {interaction.guild_id}"
+                )
+
+                config = self.db.get_bot_configuration(interaction.guild_id)
+
+                if not config:
+                    await interaction.response.send_message(
+                        "❌ **Jambot is not configured for this server.**\n\n"
+                        "Run `/jambot-setup` to configure jam leaders, approvers, and Spotify credentials.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Build status message
+                jam_leader_ids = config.get('jam_leader_ids', [])
+                approver_ids = config.get('approver_ids', [])
+                channel_id = config.get('channel_id')
+                playlist_template = config.get('playlist_name_template') or 'Bluegrass Jam {date}'
+                spotify_configured = bool(config.get('spotify_client_id'))
+                spotify_refresh_token = config.get('spotify_refresh_token')
+                spotify_authorized = bool(spotify_refresh_token)
+
+                # Format user mentions
+                jam_leaders_str = ', '.join([f"<@{uid}>" for uid in jam_leader_ids]) if jam_leader_ids else '_None configured_'
+                approvers_str = ', '.join([f"<@{uid}>" for uid in approver_ids]) if approver_ids else '_None configured_'
+
+                # Format channel
+                if channel_id:
+                    channel_str = f"<#{channel_id}>"
+                else:
+                    channel_str = "_Original message channel_"
+
+                # Format Spotify status
+                if spotify_authorized:
+                    spotify_status = "✅ Connected"
+                elif spotify_configured:
+                    spotify_status = "⚠️ Credentials set, but not authorized. Run `/jambot-spotify-setup`"
+                else:
+                    spotify_status = "❌ Not configured"
+
+                embed = discord.Embed(
+                    title="🎵 Jambot Configuration",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(name="Jam Leaders", value=jam_leaders_str, inline=False)
+                embed.add_field(name="Song Approvers", value=approvers_str, inline=False)
+                embed.add_field(name="Playlist Channel", value=channel_str, inline=True)
+                embed.add_field(name="Playlist Name", value=f"`{playlist_template}`", inline=True)
+                embed.add_field(name="Spotify", value=spotify_status, inline=False)
+
+                embed.set_footer(text="Use /jambot-setup to change settings")
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            except Exception as e:
+                logger.error(f"Error in status command: {e}", exc_info=True)
+                await interaction.response.send_message(
+                    f"❌ Error retrieving configuration: {str(e)}",
+                    ephemeral=True
+                )
+
+        @self.tree.command(
             name="jambot-process",
             description="Process a setlist message manually (Approver only)"
         )
