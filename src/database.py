@@ -1,6 +1,6 @@
-"""Database management for Jambot using SQLite."""
-import sqlite3
-import os
+"""Database management for Jambot using PostgreSQL."""
+import psycopg2
+import psycopg2.extras
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
@@ -9,34 +9,32 @@ from src.logger import logger
 
 
 class Database:
-    """SQLite database interface for song and setlist management."""
+    """PostgreSQL database interface for song and setlist management."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, database_url: Optional[str] = None):
         """Initialize database connection.
 
         Args:
-            db_path: Path to SQLite database file. Uses Config.DATABASE_PATH if not provided.
+            database_url: PostgreSQL connection URL. Uses Config.DATABASE_URL if not provided.
         """
-        self.db_path = db_path or Config.DATABASE_PATH
-        self._ensure_directory()
-        self._initialize_schema()
+        self.database_url = database_url or Config.DATABASE_URL
 
-    def _ensure_directory(self):
-        """Ensure the database directory exists."""
-        db_dir = os.path.dirname(self.db_path)
-        if db_dir and not os.path.exists(db_dir):
-            os.makedirs(db_dir, exist_ok=True)
-            logger.info(f"Created database directory: {db_dir}")
+        if not self.database_url:
+            raise ValueError(
+                "DATABASE_URL environment variable is required. "
+                "Format: postgresql://user:password@host:port/database?sslmode=require"
+            )
+
+        self._initialize_schema()
 
     @contextmanager
     def get_connection(self):
         """Context manager for database connections.
 
         Yields:
-            sqlite3.Connection: Database connection with row factory enabled.
+            psycopg2.connection: Database connection with dict cursor.
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # Enable column access by name
+        conn = psycopg2.connect(self.database_url)
         try:
             yield conn
             conn.commit()
@@ -51,8 +49,8 @@ class Database:
         """Create database tables if they don't exist."""
         schema = """
         CREATE TABLE IF NOT EXISTS songs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
             song_title TEXT NOT NULL,
             spotify_track_id TEXT NOT NULL,
             spotify_track_name TEXT NOT NULL,
@@ -65,8 +63,8 @@ class Database:
         );
 
         CREATE TABLE IF NOT EXISTS setlists (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
             date TEXT NOT NULL,
             time TEXT NOT NULL,
             playlist_name TEXT NOT NULL,
@@ -76,36 +74,34 @@ class Database:
         );
 
         CREATE TABLE IF NOT EXISTS setlist_songs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            setlist_id INTEGER NOT NULL,
-            song_id INTEGER NOT NULL,
-            position INTEGER NOT NULL,
-            FOREIGN KEY (setlist_id) REFERENCES setlists(id),
-            FOREIGN KEY (song_id) REFERENCES songs(id)
+            id SERIAL PRIMARY KEY,
+            setlist_id INTEGER NOT NULL REFERENCES setlists(id),
+            song_id INTEGER NOT NULL REFERENCES songs(id),
+            position INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS bot_configuration (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id INTEGER UNIQUE NOT NULL,
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT UNIQUE NOT NULL,
             jam_leader_ids TEXT NOT NULL,
             approver_ids TEXT NOT NULL,
-            channel_id INTEGER,
+            channel_id BIGINT,
             playlist_name_template TEXT,
             spotify_client_id TEXT,
             spotify_client_secret TEXT,
             spotify_redirect_uri TEXT,
             updated_at TIMESTAMP NOT NULL,
-            updated_by INTEGER NOT NULL
+            updated_by BIGINT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS spotify_tokens (
-            guild_id INTEGER PRIMARY KEY,
+            guild_id BIGINT PRIMARY KEY,
             access_token TEXT NOT NULL,
             refresh_token TEXT NOT NULL,
-            expires_at INTEGER NOT NULL,
-            authorized_by INTEGER NOT NULL,
-            created_at INTEGER DEFAULT (strftime('%s', 'now')),
-            updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+            expires_at BIGINT NOT NULL,
+            authorized_by BIGINT NOT NULL,
+            created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()),
+            updated_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())
         );
 
         CREATE INDEX IF NOT EXISTS idx_songs_guild_title ON songs(guild_id, song_title);
@@ -117,128 +113,8 @@ class Database:
         """
 
         with self.get_connection() as conn:
-            conn.executescript(schema)
-
-            # Migrate existing databases - add guild_id columns if they don't exist
-            cursor = conn.execute("PRAGMA table_info(songs)")
-            songs_columns = [row[1] for row in cursor.fetchall()]
-
-            cursor = conn.execute("PRAGMA table_info(setlists)")
-            setlists_columns = [row[1] for row in cursor.fetchall()]
-
-            cursor = conn.execute("PRAGMA table_info(bot_configuration)")
-            config_columns = [row[1] for row in cursor.fetchall()]
-
-            # Migration for songs table
-            if 'guild_id' not in songs_columns:
-                logger.info("Migrating songs table to add guild_id column...")
-                # Create new table with guild_id
-                conn.execute("""
-                    CREATE TABLE songs_new (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        guild_id INTEGER NOT NULL DEFAULT 0,
-                        song_title TEXT NOT NULL,
-                        spotify_track_id TEXT NOT NULL,
-                        spotify_track_name TEXT NOT NULL,
-                        artist TEXT NOT NULL,
-                        album TEXT NOT NULL,
-                        spotify_url TEXT NOT NULL,
-                        first_used DATE NOT NULL,
-                        last_used DATE NOT NULL,
-                        UNIQUE(guild_id, song_title)
-                    )
-                """)
-                # Copy data (all existing songs assigned to guild_id 0 for backwards compatibility)
-                conn.execute("""
-                    INSERT INTO songs_new
-                    SELECT id, 0 as guild_id, song_title, spotify_track_id, spotify_track_name,
-                           artist, album, spotify_url, first_used, last_used
-                    FROM songs
-                """)
-                # Drop old table and rename
-                conn.execute("DROP TABLE songs")
-                conn.execute("ALTER TABLE songs_new RENAME TO songs")
-                conn.execute("CREATE INDEX idx_songs_guild_title ON songs(guild_id, song_title)")
-                logger.info("Migrated songs table successfully")
-
-            # Migration for setlists table
-            if 'guild_id' not in setlists_columns:
-                logger.info("Migrating setlists table to add guild_id column...")
-                conn.execute("""
-                    CREATE TABLE setlists_new (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        guild_id INTEGER NOT NULL DEFAULT 0,
-                        date TEXT NOT NULL,
-                        time TEXT NOT NULL,
-                        playlist_name TEXT NOT NULL,
-                        spotify_playlist_id TEXT,
-                        spotify_playlist_url TEXT,
-                        created_at TIMESTAMP NOT NULL
-                    )
-                """)
-                conn.execute("""
-                    INSERT INTO setlists_new
-                    SELECT id, 0 as guild_id, date, time, playlist_name,
-                           spotify_playlist_id, spotify_playlist_url, created_at
-                    FROM setlists
-                """)
-                conn.execute("DROP TABLE setlists")
-                conn.execute("ALTER TABLE setlists_new RENAME TO setlists")
-                conn.execute("CREATE INDEX idx_setlists_guild_date ON setlists(guild_id, date)")
-                logger.info("Migrated setlists table successfully")
-
-            # Migrate bot_configuration table columns
-            if 'channel_id' not in config_columns:
-                conn.execute("ALTER TABLE bot_configuration ADD COLUMN channel_id INTEGER")
-                logger.info("Added channel_id column to bot_configuration table")
-
-            if 'playlist_name_template' not in config_columns:
-                conn.execute("ALTER TABLE bot_configuration ADD COLUMN playlist_name_template TEXT")
-                logger.info("Added playlist_name_template column to bot_configuration table")
-
-            if 'spotify_client_id' not in config_columns:
-                conn.execute("ALTER TABLE bot_configuration ADD COLUMN spotify_client_id TEXT")
-                logger.info("Added spotify_client_id column to bot_configuration table")
-
-            if 'spotify_client_secret' not in config_columns:
-                conn.execute("ALTER TABLE bot_configuration ADD COLUMN spotify_client_secret TEXT")
-                logger.info("Added spotify_client_secret column to bot_configuration table")
-
-            if 'spotify_redirect_uri' not in config_columns:
-                conn.execute("ALTER TABLE bot_configuration ADD COLUMN spotify_redirect_uri TEXT")
-                logger.info("Added spotify_redirect_uri column to bot_configuration table")
-
-            # Migration for spotify_tokens table - convert old single-token table to multi-guild
-            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='spotify_tokens'")
-            if cursor.fetchone():
-                # Check if this is the old schema (has 'id' column instead of 'guild_id')
-                cursor = conn.execute("PRAGMA table_info(spotify_tokens)")
-                spotify_columns = [row[1] for row in cursor.fetchall()]
-
-                if 'id' in spotify_columns and 'guild_id' not in spotify_columns:
-                    logger.info("Migrating spotify_tokens table from single-guild to multi-guild schema...")
-
-                    # Get the old token data
-                    cursor = conn.execute("SELECT access_token, refresh_token, expires_at FROM spotify_tokens WHERE id = 1")
-                    old_token = cursor.fetchone()
-
-                    # Drop old table
-                    conn.execute("DROP TABLE spotify_tokens")
-
-                    # Create new table with guild_id (already done in schema above)
-                    # Note: We can't automatically assign to a guild since we don't know which one
-                    # Users will need to re-authorize via /jambot-spotify-setup
-
-                    if old_token:
-                        logger.warning(
-                            "Old Spotify tokens found but cannot be automatically migrated to multi-guild schema. "
-                            "Users must re-authorize Spotify using /jambot-spotify-setup command."
-                        )
-                    else:
-                        logger.info("No old Spotify tokens found, migration complete")
-
-                    logger.info("Migrated spotify_tokens table successfully")
-
+            cursor = conn.cursor()
+            cursor.execute(schema)
             logger.info("Database schema initialized successfully")
 
     def get_song_by_title(self, guild_id: int, song_title: str) -> Optional[Dict[str, Any]]:
@@ -252,8 +128,9 @@ class Database:
             Dictionary with song data if found, None otherwise.
         """
         with self.get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT * FROM songs WHERE guild_id = ? AND song_title = ?",
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM songs WHERE guild_id = %s AND song_title = %s",
                 (guild_id, song_title)
             )
             row = cursor.fetchone()
@@ -288,27 +165,26 @@ class Database:
         today = datetime.now().date().isoformat()
 
         with self.get_connection() as conn:
-            # Check if song exists for this guild
-            existing = self.get_song_by_title(guild_id, song_title)
+            cursor = conn.cursor()
 
-            if existing:
-                # Update last_used date
-                conn.execute(
-                    "UPDATE songs SET last_used = ? WHERE id = ?",
-                    (today, existing['id'])
-                )
-                logger.info(f"Updated last_used for song in guild {guild_id}: {song_title}")
-                return existing['id']
-            else:
-                # Insert new song
-                cursor = conn.execute(
-                    """INSERT INTO songs
-                       (guild_id, song_title, spotify_track_id, spotify_track_name, artist, album, spotify_url, first_used, last_used)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (guild_id, song_title, spotify_track_id, spotify_track_name, artist, album, spotify_url, today, today)
-                )
-                logger.info(f"Added new song to database for guild {guild_id}: {song_title}")
-                return cursor.lastrowid
+            # Use upsert (INSERT ... ON CONFLICT)
+            cursor.execute(
+                """INSERT INTO songs
+                   (guild_id, song_title, spotify_track_id, spotify_track_name, artist, album, spotify_url, first_used, last_used)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (guild_id, song_title) DO UPDATE SET
+                       last_used = EXCLUDED.last_used,
+                       spotify_track_id = EXCLUDED.spotify_track_id,
+                       spotify_track_name = EXCLUDED.spotify_track_name,
+                       artist = EXCLUDED.artist,
+                       album = EXCLUDED.album,
+                       spotify_url = EXCLUDED.spotify_url
+                   RETURNING id""",
+                (guild_id, song_title, spotify_track_id, spotify_track_name, artist, album, spotify_url, today, today)
+            )
+            song_id = cursor.fetchone()[0]
+            logger.info(f"Added/updated song in database for guild {guild_id}: {song_title}")
+            return song_id
 
     def create_setlist(self, guild_id: int, date: str, time: str, playlist_name: str) -> int:
         """Create a new setlist record for a specific guild.
@@ -325,12 +201,14 @@ class Database:
         created_at = datetime.now().isoformat()
 
         with self.get_connection() as conn:
-            cursor = conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
                 """INSERT INTO setlists (guild_id, date, time, playlist_name, created_at)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s)
+                   RETURNING id""",
                 (guild_id, date, time, playlist_name, created_at)
             )
-            setlist_id = cursor.lastrowid
+            setlist_id = cursor.fetchone()[0]
             logger.info(f"Created setlist for guild {guild_id}: {playlist_name} (ID: {setlist_id})")
             return setlist_id
 
@@ -343,10 +221,11 @@ class Database:
             playlist_url: Spotify playlist URL.
         """
         with self.get_connection() as conn:
-            conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
                 """UPDATE setlists
-                   SET spotify_playlist_id = ?, spotify_playlist_url = ?
-                   WHERE id = ?""",
+                   SET spotify_playlist_id = %s, spotify_playlist_url = %s
+                   WHERE id = %s""",
                 (playlist_id, playlist_url, setlist_id)
             )
             logger.info(f"Updated setlist {setlist_id} with Spotify playlist: {playlist_url}")
@@ -360,9 +239,10 @@ class Database:
             position: Position in setlist (1-indexed).
         """
         with self.get_connection() as conn:
-            conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
                 """INSERT INTO setlist_songs (setlist_id, song_id, position)
-                   VALUES (?, ?, ?)""",
+                   VALUES (%s, %s, %s)""",
                 (setlist_id, song_id, position)
             )
             logger.debug(f"Added song {song_id} to setlist {setlist_id} at position {position}")
@@ -377,11 +257,12 @@ class Database:
             List of song dictionaries with position information.
         """
         with self.get_connection() as conn:
-            cursor = conn.execute(
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
                 """SELECT s.*, ss.position
                    FROM songs s
                    JOIN setlist_songs ss ON s.id = ss.song_id
-                   WHERE ss.setlist_id = ?
+                   WHERE ss.setlist_id = %s
                    ORDER BY ss.position""",
                 (setlist_id,)
             )
@@ -398,8 +279,9 @@ class Database:
             Setlist dictionary if found, None otherwise.
         """
         with self.get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT * FROM setlists WHERE guild_id = ? AND date = ?",
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM setlists WHERE guild_id = %s AND date = %s",
                 (guild_id, date)
             )
             row = cursor.fetchone()
@@ -439,12 +321,23 @@ class Database:
         updated_at = datetime.now().isoformat()
 
         with self.get_connection() as conn:
-            # Use INSERT OR REPLACE to handle both create and update
-            conn.execute(
-                """INSERT OR REPLACE INTO bot_configuration
+            cursor = conn.cursor()
+            # Use upsert (INSERT ... ON CONFLICT)
+            cursor.execute(
+                """INSERT INTO bot_configuration
                    (guild_id, jam_leader_ids, approver_ids, channel_id, playlist_name_template,
                     spotify_client_id, spotify_client_secret, spotify_redirect_uri, updated_at, updated_by)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (guild_id) DO UPDATE SET
+                       jam_leader_ids = EXCLUDED.jam_leader_ids,
+                       approver_ids = EXCLUDED.approver_ids,
+                       channel_id = EXCLUDED.channel_id,
+                       playlist_name_template = EXCLUDED.playlist_name_template,
+                       spotify_client_id = EXCLUDED.spotify_client_id,
+                       spotify_client_secret = EXCLUDED.spotify_client_secret,
+                       spotify_redirect_uri = EXCLUDED.spotify_redirect_uri,
+                       updated_at = EXCLUDED.updated_at,
+                       updated_by = EXCLUDED.updated_by""",
                 (guild_id, jam_leader_ids_json, approver_ids_json, channel_id, playlist_name_template,
                  spotify_client_id, spotify_client_secret, spotify_redirect_uri, updated_at, updated_by or 0)
             )
@@ -466,8 +359,9 @@ class Database:
             Configuration includes 'jam_leader_ids' and 'approver_ids' as lists.
         """
         with self.get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT * FROM bot_configuration WHERE guild_id = ?",
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM bot_configuration WHERE guild_id = %s",
                 (guild_id,)
             )
             row = cursor.fetchone()

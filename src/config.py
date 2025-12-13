@@ -21,6 +21,11 @@ class Config:
     SPOTIFY_REFRESH_TOKEN = os.getenv('SPOTIFY_REFRESH_TOKEN')
 
     # Database Configuration
+    # PostgreSQL connection URL (preferred for production)
+    # Format: postgresql://user:password@host:port/database?sslmode=require
+    DATABASE_URL = os.getenv('DATABASE_URL')
+
+    # Legacy SQLite path (used if DATABASE_URL not set)
     DATABASE_PATH = os.getenv('DATABASE_PATH', '/app/data/jambot.db')
 
     # Logging Configuration

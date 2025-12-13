@@ -8,7 +8,7 @@ spotipy==2.23.0
 python-dotenv==1.0.0
 
 # Database
-# sqlite3 is built into Python
+psycopg2-binary==2.9.9
 
 # Logging
 # logging is built into Python

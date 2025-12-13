@@ -112,12 +112,13 @@ class SpotifyClient:
             self.db = Database()
 
         with self.db.get_connection() as conn:
-            cursor = conn.cursor()
+            import psycopg2.extras
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             cursor.execute("""
                 SELECT access_token, refresh_token, expires_at
                 FROM spotify_tokens
-                WHERE guild_id = ?
+                WHERE guild_id = %s
             """, (self.guild_id,))
 
             row = cursor.fetchone()
@@ -128,9 +129,9 @@ class SpotifyClient:
                 )
 
             return {
-                'access_token': row[0],
-                'refresh_token': row[1],
-                'expires_at': row[2],
+                'access_token': row['access_token'],
+                'refresh_token': row['refresh_token'],
+                'expires_at': row['expires_at'],
             }
 
     def _save_tokens_to_db(self, access_token: str, refresh_token: str, expires_at: int, user_id: Optional[int] = None):
@@ -151,11 +152,17 @@ class SpotifyClient:
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Insert or update tokens for this guild
+            # Insert or update tokens for this guild (PostgreSQL upsert)
             cursor.execute("""
-                INSERT OR REPLACE INTO spotify_tokens
+                INSERT INTO spotify_tokens
                 (guild_id, access_token, refresh_token, expires_at, authorized_by, updated_at)
-                VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
+                VALUES (%s, %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()))
+                ON CONFLICT (guild_id) DO UPDATE SET
+                    access_token = EXCLUDED.access_token,
+                    refresh_token = EXCLUDED.refresh_token,
+                    expires_at = EXCLUDED.expires_at,
+                    authorized_by = EXCLUDED.authorized_by,
+                    updated_at = EXTRACT(EPOCH FROM NOW())
             """, (self.guild_id, access_token, refresh_token, expires_at, authorized_by))
 
             logger.info(f"Saved Spotify tokens for guild {self.guild_id} (authorized by user {authorized_by})")
