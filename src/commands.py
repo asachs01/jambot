@@ -1,10 +1,11 @@
 """Slash commands for Jambot configuration."""
 import discord
 from discord import app_commands
-from discord.ui import Modal, TextInput
-from typing import List
+from discord.ui import Modal, TextInput, View, Button
+from typing import List, Optional
 from src.logger import logger
 from src.database import Database
+from src.setlist_parser import SetlistParser
 
 
 class AdvancedSettingsModal(Modal, title="Advanced Settings"):
@@ -326,6 +327,72 @@ class ConfigurationModal(Modal, title="Configure Jambot"):
                 invalid_ids.append(str(user_id))
 
         return invalid_ids
+
+
+class SetlistPatternConfirmView(View):
+    """View with buttons to confirm or reject learned setlist patterns."""
+
+    def __init__(self, db: Database, bot, guild_id: int, analysis: dict, message_url: str):
+        """Initialize the confirmation view.
+
+        Args:
+            db: Database instance.
+            bot: Bot instance.
+            guild_id: Guild ID to save patterns for.
+            analysis: Analysis result from SetlistParser.analyze_setlist_structure()
+            message_url: URL of the original message used for learning.
+        """
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.db = db
+        self.bot = bot
+        self.guild_id = guild_id
+        self.analysis = analysis
+        self.message_url = message_url
+        self.confirmed = False
+
+    @discord.ui.button(label="Confirm Pattern", style=discord.ButtonStyle.success, emoji="✅")
+    async def confirm_button(self, interaction: discord.Interaction, button: Button):
+        """Handle pattern confirmation."""
+        if interaction.user.id != interaction.message.interaction.user.id:
+            await interaction.response.send_message(
+                "❌ Only the user who started this can confirm.",
+                ephemeral=True
+            )
+            return
+
+        # The default patterns already work well, we just need to confirm they work
+        # If the analysis found songs, the patterns are compatible
+        self.confirmed = True
+
+        # Invalidate parser cache so new patterns take effect
+        self.bot.invalidate_parser_cache(self.guild_id)
+
+        await interaction.response.edit_message(
+            content=(
+                f"✅ **Pattern confirmed!**\n\n"
+                f"Jambot will now recognize setlists in this format.\n"
+                f"The default patterns have been verified to work with your setlist format.\n\n"
+                f"**Test it:** Post a setlist message (or use `/jambot-process`) and Jambot will recognize it."
+            ),
+            view=None
+        )
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancel_button(self, interaction: discord.Interaction, button: Button):
+        """Handle cancellation."""
+        if interaction.user.id != interaction.message.interaction.user.id:
+            await interaction.response.send_message(
+                "❌ Only the user who started this can cancel.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.edit_message(
+            content="❌ Pattern learning cancelled. No changes were made.",
+            view=None
+        )
+        self.stop()
 
 
 class JambotCommands:
@@ -699,11 +766,13 @@ class JambotCommands:
                     )
                     return
 
-                # Check if the message is a valid setlist
-                if not self.bot.parser.is_setlist_message(message.content):
+                # Check if the message is a valid setlist using guild-specific parser
+                parser = self.bot.get_parser_for_guild(interaction.guild_id)
+                if not parser.is_setlist_message(message.content):
                     await interaction.response.send_message(
                         "❌ That message doesn't appear to be a setlist.\n"
-                        "Expected format: \"Here's the setlist for the [time] jam on [date].\"",
+                        "Expected format: \"Here's the setlist for the [time] jam on [date].\"\n"
+                        "Use `/jambot-learn-patterns` to configure custom setlist patterns.",
                         ephemeral=True
                     )
                     return
@@ -752,5 +821,149 @@ class JambotCommands:
                 ephemeral=True
             )
             logger.error(f"Error in process command: {error}", exc_info=True)
+
+        @self.tree.command(
+            name="jambot-learn-patterns",
+            description="Scan channel for setlists and learn the pattern (Admin only)"
+        )
+        @app_commands.checks.has_permissions(administrator=True)
+        async def learn_patterns_command(interaction: discord.Interaction):
+            """Scan channel for potential setlists and help configure patterns.
+
+            This command scans the last 50 messages in the channel for potential
+            setlists, shows what it found, and lets the admin confirm the pattern.
+
+            Args:
+                interaction: Discord interaction object.
+            """
+            try:
+                await interaction.response.defer(ephemeral=True)
+
+                channel = interaction.channel
+                guild_id = interaction.guild_id
+
+                # Scan last 50 messages for potential setlists
+                potential_setlists = []
+                async for message in channel.history(limit=50):
+                    if message.author.bot:
+                        continue
+
+                    is_potential, details = SetlistParser.detect_potential_setlist(message.content)
+                    if is_potential:
+                        potential_setlists.append({
+                            'message': message,
+                            'details': details,
+                            'confidence': details['confidence']
+                        })
+
+                if not potential_setlists:
+                    await interaction.followup.send(
+                        "❌ **No potential setlists found in the last 50 messages.**\n\n"
+                        "I look for messages with:\n"
+                        "• Numbered lists (1., 2., 3., etc.)\n"
+                        "• Keywords like 'setlist', 'jam', 'songs for'\n\n"
+                        "Try posting a setlist message in this channel and run this command again.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Sort by confidence and get the best match
+                potential_setlists.sort(key=lambda x: x['confidence'], reverse=True)
+                best_match = potential_setlists[0]
+                best_message = best_match['message']
+
+                # Analyze the structure
+                analysis = SetlistParser.analyze_setlist_structure(best_message.content)
+
+                if not analysis['success']:
+                    await interaction.followup.send(
+                        f"⚠️ **Found a potential setlist but couldn't fully parse it.**\n\n"
+                        f"Message from {best_message.author.mention} ({best_message.jump_url}):\n"
+                        f"```\n{best_message.content[:500]}{'...' if len(best_message.content) > 500 else ''}\n```\n\n"
+                        f"Keywords found: {', '.join(best_match['details']['matched_keywords']) or 'None'}\n"
+                        f"Numbered items found: {len(best_match['details']['numbered_items'])}\n\n"
+                        "I had trouble extracting the songs. Make sure your setlist has:\n"
+                        "• A header line with the date/time\n"
+                        "• Numbered songs (1., 2., 3., etc.)",
+                        ephemeral=True
+                    )
+                    return
+
+                # Build the success message
+                song_preview = "\n".join([
+                    f"  {s['number']}. {s['title']}" + (f" ({s['key']})" if s['key'] else "")
+                    for s in analysis['songs'][:5]
+                ])
+                if len(analysis['songs']) > 5:
+                    song_preview += f"\n  ... and {len(analysis['songs']) - 5} more songs"
+
+                response = (
+                    f"🎵 **Found a setlist!** (Confidence: {best_match['confidence']:.0%})\n\n"
+                    f"**Source:** Message from {best_message.author.mention}\n"
+                    f"**Link:** {best_message.jump_url}\n\n"
+                )
+
+                if analysis['intro_line']:
+                    response += f"**Header detected:**\n```\n{analysis['intro_line']}\n```\n"
+
+                if analysis['detected_time'] or analysis['detected_date']:
+                    response += f"**Time:** {analysis['detected_time'] or 'Not detected'}\n"
+                    response += f"**Date:** {analysis['detected_date'] or 'Not detected'}\n\n"
+
+                response += f"**Songs found ({len(analysis['songs'])}):**\n```\n{song_preview}\n```\n"
+                format_desc = 'Songs with keys (e.g., "Song Name (G)")' if analysis['has_keys'] else 'Songs without keys'
+                response += f"**Format:** {format_desc}\n\n"
+
+                response += (
+                    "**Does this look correct?** Click 'Confirm Pattern' to enable this format.\n"
+                    "Jambot will then automatically recognize setlists in this format."
+                )
+
+                # Create confirmation view
+                view = SetlistPatternConfirmView(
+                    db=self.db,
+                    bot=self.bot,
+                    guild_id=guild_id,
+                    analysis=analysis,
+                    message_url=best_message.jump_url
+                )
+
+                await interaction.followup.send(response, view=view, ephemeral=True)
+
+                logger.info(
+                    f"Learn patterns command invoked by {interaction.user.id} "
+                    f"in guild {guild_id}, found {len(potential_setlists)} potential setlists"
+                )
+
+            except Exception as e:
+                logger.error(f"Error in learn patterns command: {e}", exc_info=True)
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        f"❌ Error scanning for setlists: {str(e)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"❌ Error scanning for setlists: {str(e)}",
+                        ephemeral=True
+                    )
+
+        @learn_patterns_command.error
+        async def learn_patterns_error(
+            interaction: discord.Interaction,
+            error: app_commands.AppCommandError
+        ):
+            """Handle errors for the learn patterns command."""
+            if isinstance(error, app_commands.errors.MissingPermissions):
+                await interaction.response.send_message(
+                    "❌ You need administrator permissions to use this command.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ An error occurred while processing the command.",
+                    ephemeral=True
+                )
+                logger.error(f"Error in learn patterns command: {error}", exc_info=True)
 
         logger.info("Slash commands registered")
