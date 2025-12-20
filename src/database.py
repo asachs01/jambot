@@ -90,6 +90,8 @@ class Database:
             spotify_client_id TEXT,
             spotify_client_secret TEXT,
             spotify_redirect_uri TEXT,
+            setlist_intro_pattern TEXT,
+            setlist_song_pattern TEXT,
             updated_at TIMESTAMP NOT NULL,
             updated_by BIGINT NOT NULL
         );
@@ -112,9 +114,25 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_spotify_tokens_guild_id ON spotify_tokens(guild_id);
         """
 
+        # Migration for existing databases: add setlist pattern columns if they don't exist
+        migration = """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'setlist_intro_pattern') THEN
+                ALTER TABLE bot_configuration ADD COLUMN setlist_intro_pattern TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'setlist_song_pattern') THEN
+                ALTER TABLE bot_configuration ADD COLUMN setlist_song_pattern TEXT;
+            END IF;
+        END $$;
+        """
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(schema)
+            cursor.execute(migration)
             logger.info("Database schema initialized successfully")
 
     def get_song_by_title(self, guild_id: int, song_title: str) -> Optional[Dict[str, Any]]:
@@ -299,6 +317,8 @@ class Database:
         spotify_client_id: Optional[str] = None,
         spotify_client_secret: Optional[str] = None,
         spotify_redirect_uri: Optional[str] = None,
+        setlist_intro_pattern: Optional[str] = None,
+        setlist_song_pattern: Optional[str] = None,
         updated_by: Optional[int] = None
     ):
         """Save bot configuration for a guild.
@@ -312,6 +332,8 @@ class Database:
             spotify_client_id: Optional Spotify app client ID for this guild.
             spotify_client_secret: Optional Spotify app client secret for this guild.
             spotify_redirect_uri: Optional Spotify redirect URI for this guild.
+            setlist_intro_pattern: Optional regex pattern for setlist intro line.
+            setlist_song_pattern: Optional regex pattern for song lines.
             updated_by: User ID who made the update (optional).
         """
         # Convert lists to JSON strings for storage
@@ -326,8 +348,9 @@ class Database:
             cursor.execute(
                 """INSERT INTO bot_configuration
                    (guild_id, jam_leader_ids, approver_ids, channel_id, playlist_name_template,
-                    spotify_client_id, spotify_client_secret, spotify_redirect_uri, updated_at, updated_by)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    spotify_client_id, spotify_client_secret, spotify_redirect_uri,
+                    setlist_intro_pattern, setlist_song_pattern, updated_at, updated_by)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (guild_id) DO UPDATE SET
                        jam_leader_ids = EXCLUDED.jam_leader_ids,
                        approver_ids = EXCLUDED.approver_ids,
@@ -336,10 +359,13 @@ class Database:
                        spotify_client_id = EXCLUDED.spotify_client_id,
                        spotify_client_secret = EXCLUDED.spotify_client_secret,
                        spotify_redirect_uri = EXCLUDED.spotify_redirect_uri,
+                       setlist_intro_pattern = EXCLUDED.setlist_intro_pattern,
+                       setlist_song_pattern = EXCLUDED.setlist_song_pattern,
                        updated_at = EXCLUDED.updated_at,
                        updated_by = EXCLUDED.updated_by""",
                 (guild_id, jam_leader_ids_json, approver_ids_json, channel_id, playlist_name_template,
-                 spotify_client_id, spotify_client_secret, spotify_redirect_uri, updated_at, updated_by or 0)
+                 spotify_client_id, spotify_client_secret, spotify_redirect_uri,
+                 setlist_intro_pattern, setlist_song_pattern, updated_at, updated_by or 0)
             )
             logger.info(
                 f"Saved bot configuration for guild {guild_id}: "
@@ -373,6 +399,77 @@ class Database:
                 config['approver_ids'] = json.loads(config['approver_ids'])
                 return config
             return None
+
+    def update_setlist_patterns(
+        self,
+        guild_id: int,
+        setlist_intro_pattern: Optional[str] = None,
+        setlist_song_pattern: Optional[str] = None,
+        updated_by: Optional[int] = None
+    ) -> bool:
+        """Update only the setlist pattern configuration for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            setlist_intro_pattern: Regex pattern for setlist intro line (None to keep existing).
+            setlist_song_pattern: Regex pattern for song lines (None to keep existing).
+            updated_by: User ID who made the update (optional).
+
+        Returns:
+            True if update was successful, False if no configuration exists for guild.
+        """
+        # Check if configuration exists
+        config = self.get_bot_configuration(guild_id)
+        if not config:
+            logger.warning(f"Cannot update setlist patterns: no configuration found for guild {guild_id}")
+            return False
+
+        updated_at = datetime.now().isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Build dynamic update based on what's provided
+            updates = []
+            params = []
+
+            if setlist_intro_pattern is not None:
+                updates.append("setlist_intro_pattern = %s")
+                params.append(setlist_intro_pattern)
+            if setlist_song_pattern is not None:
+                updates.append("setlist_song_pattern = %s")
+                params.append(setlist_song_pattern)
+
+            updates.append("updated_at = %s")
+            params.append(updated_at)
+            if updated_by:
+                updates.append("updated_by = %s")
+                params.append(updated_by)
+
+            params.append(guild_id)
+
+            cursor.execute(
+                f"UPDATE bot_configuration SET {', '.join(updates)} WHERE guild_id = %s",
+                params
+            )
+            logger.info(f"Updated setlist patterns for guild {guild_id}")
+            return True
+
+    def get_setlist_patterns(self, guild_id: int) -> Dict[str, Optional[str]]:
+        """Get the setlist patterns for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            Dictionary with 'intro_pattern' and 'song_pattern' keys (values may be None).
+        """
+        config = self.get_bot_configuration(guild_id)
+        if config:
+            return {
+                'intro_pattern': config.get('setlist_intro_pattern'),
+                'song_pattern': config.get('setlist_song_pattern')
+            }
+        return {'intro_pattern': None, 'song_pattern': None}
 
     def is_jam_leader(self, guild_id: int, user_id: int) -> bool:
         """Check if a user is a jam leader for a guild.

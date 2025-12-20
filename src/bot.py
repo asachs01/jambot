@@ -29,13 +29,60 @@ class JamBot(commands.Bot):
         super().__init__(command_prefix='@jambot ', intents=intents)
 
         self.db = Database()
-        self.parser = SetlistParser()
+        self._default_parser = SetlistParser()
+        self._guild_parsers: Dict[int, SetlistParser] = {}  # Cache guild-specific parsers
         self.commands_handler = JambotCommands(self, self.db)
 
         # Track active approval workflows
         self.active_workflows: Dict[int, Dict] = {}  # message_id -> workflow data
 
         logger.info("JamBot initialized")
+
+    def get_parser_for_guild(self, guild_id: int) -> SetlistParser:
+        """Get a parser configured with guild-specific patterns if available.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            SetlistParser configured with guild's custom patterns or defaults.
+        """
+        # Check cache first
+        if guild_id in self._guild_parsers:
+            return self._guild_parsers[guild_id]
+
+        # Get custom patterns from database
+        patterns = self.db.get_setlist_patterns(guild_id)
+        intro_pattern = patterns.get('intro_pattern')
+        song_pattern = patterns.get('song_pattern')
+
+        # If guild has custom patterns, create a custom parser
+        if intro_pattern or song_pattern:
+            parser = SetlistParser(
+                intro_pattern=intro_pattern,
+                song_pattern=song_pattern
+            )
+            self._guild_parsers[guild_id] = parser
+            logger.info(f"Created custom parser for guild {guild_id}")
+            return parser
+
+        # Otherwise use default parser
+        return self._default_parser
+
+    def invalidate_parser_cache(self, guild_id: int):
+        """Invalidate the cached parser for a guild (after pattern update).
+
+        Args:
+            guild_id: Discord guild (server) ID.
+        """
+        if guild_id in self._guild_parsers:
+            del self._guild_parsers[guild_id]
+            logger.info(f"Invalidated parser cache for guild {guild_id}")
+
+    @property
+    def parser(self) -> SetlistParser:
+        """Default parser property for backwards compatibility."""
+        return self._default_parser
 
     async def setup_hook(self):
         """Called when the bot is setting up."""
@@ -87,15 +134,18 @@ class JamBot(commands.Bot):
         logger.info(f"Received message from {message.author} (ID: {message.author.id})")
         logger.info(f"Message content preview: {message.content[:100]}...")
 
+        # Get guild-specific parser (with custom patterns if configured)
+        parser = self.get_parser_for_guild(message.guild.id)
+
         # Check if message is from a jam leader
         if self.db.is_jam_leader(message.guild.id, message.author.id):
-            if self.parser.is_setlist_message(message.content):
+            if parser.is_setlist_message(message.content):
                 logger.info(f"Detected setlist message from jam leader in channel {message.channel.id}")
                 await self.handle_setlist_message(message)
 
         # Also fall back to env var for backwards compatibility during migration
         elif Config.DISCORD_JAM_LEADER_ID and str(message.author.id) == Config.DISCORD_JAM_LEADER_ID:
-            if self.parser.is_setlist_message(message.content):
+            if parser.is_setlist_message(message.content):
                 logger.info(f"Detected setlist message from jam leader (env var) in channel {message.channel.id}")
                 await self.handle_setlist_message(message)
 
@@ -209,18 +259,22 @@ class JamBot(commands.Bot):
             triggered_by_user_id: Optional user ID who triggered this manually (for /jambot-process).
         """
         try:
+            # Get guild-specific parser (with custom patterns if configured)
+            guild_id = message.guild.id if message.guild else 0
+            parser = self.get_parser_for_guild(guild_id)
+
             # Parse the setlist
-            setlist_data = self.parser.parse_setlist(message.content)
+            setlist_data = parser.parse_setlist(message.content)
             if not setlist_data:
                 logger.error(
-                    "Failed to parse setlist message. Expected format: "
-                    "\"Here's the setlist for the [time] jam on [date].\" followed by songs with keys."
+                    "Failed to parse setlist message. The message was detected as a setlist "
+                    "but couldn't be parsed. Check if the format matches the expected patterns."
                 )
                 await self.notify_admin(
                     f"⚠️ Failed to parse setlist message from {message.jump_url}\n"
-                    f"Expected format: \"Here's the setlist for the [time] jam on [date].\"\n"
-                    f"Followed by songs with keys in parentheses.",
-                    guild_id=message.guild.id if message.guild else None
+                    f"The intro was detected but songs couldn't be extracted.\n"
+                    f"Use `/jambot-learn-patterns` to configure custom setlist patterns for your server.",
+                    guild_id=guild_id
                 )
                 return
 
