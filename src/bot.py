@@ -632,7 +632,9 @@ class JamBot(commands.Bot):
 
                 error_message = (
                     f"⚠️ **Cannot create playlist** - Missing selections for:\n" +
-                    "\n".join(f"- {song}" for song in missing_songs)
+                    "\n".join(f"- {song}" for song in missing_songs) +
+                    "\n\n**To fix:** Select the missing songs above using the number reactions (1️⃣, 2️⃣, 3️⃣), "
+                    "then remove your ✅ reaction from the summary message and add it again."
                 )
 
                 if approver_ids:
