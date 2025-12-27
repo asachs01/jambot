@@ -622,12 +622,26 @@ class JamBot(commands.Bot):
                     missing_songs.append(match['title'])
 
             if missing_songs:
-                admin = await self.fetch_user(int(Config.DISCORD_ADMIN_ID))
-                dm_channel = await admin.create_dm()
-                await dm_channel.send(
+                # Get approvers from database using guild_id from workflow
+                guild_id = workflow.get('guild_id')
+                approver_ids = self.db.get_approver_ids(guild_id) if guild_id else []
+
+                # Fall back to env var if no approvers configured
+                if not approver_ids and Config.DISCORD_ADMIN_ID:
+                    approver_ids = [int(Config.DISCORD_ADMIN_ID)]
+
+                error_message = (
                     f"⚠️ **Cannot create playlist** - Missing selections for:\n" +
                     "\n".join(f"- {song}" for song in missing_songs)
                 )
+
+                if approver_ids:
+                    # Notify the first approver about the issue
+                    admin = await self.fetch_user(approver_ids[0])
+                    dm_channel = await admin.create_dm()
+                    await dm_channel.send(error_message)
+                else:
+                    logger.error(f"Cannot notify about missing songs - no approvers configured: {missing_songs}")
                 return
 
             # Get guild configuration for playlist name and channel
