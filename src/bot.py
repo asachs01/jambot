@@ -562,38 +562,51 @@ class JamBot(commands.Bot):
 
         return embed
 
-    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         """Handle reaction additions for approval workflow.
 
+        Uses raw reaction event for reliability - doesn't require message to be cached.
+
         Args:
-            reaction: Discord reaction object.
-            user: User who added the reaction.
+            payload: Raw reaction event payload.
         """
         # Ignore bot's own reactions
-        if user.id == self.user.id:
+        if payload.user_id == self.user.id:
             return
 
         # Check if reaction is on an active workflow message
-        if reaction.message.id not in self.active_workflows:
+        if payload.message_id not in self.active_workflows:
             return
 
-        workflow = self.active_workflows[reaction.message.id]
+        logger.info(f"Received reaction {payload.emoji} on workflow message {payload.message_id}")
+
+        workflow = self.active_workflows[payload.message_id]
+        emoji_str = str(payload.emoji)
 
         # Check if this is the summary message
-        if reaction.message.id == workflow.get('summary_message_id'):
-            if str(reaction.emoji) == self.APPROVE_EMOJI:
+        if payload.message_id == workflow.get('summary_message_id'):
+            if emoji_str == self.APPROVE_EMOJI:
                 await self.create_playlist_from_workflow(workflow)
-            elif str(reaction.emoji) == self.REJECT_EMOJI:
-                await reaction.message.channel.send("❌ Playlist creation cancelled.")
+            elif emoji_str == self.REJECT_EMOJI:
+                # Get the channel to send cancellation message
+                try:
+                    user = await self.fetch_user(payload.user_id)
+                    dm_channel = await user.create_dm()
+                    await dm_channel.send("❌ Playlist creation cancelled.")
+                except Exception as e:
+                    logger.error(f"Failed to send cancellation message: {e}")
                 self.cleanup_workflow(workflow)
             return
 
         # Handle song selection reactions
         # Find which song this message corresponds to
-        msg_index = workflow['message_ids'].index(reaction.message.id)
-        match = workflow['song_matches'][msg_index]
+        try:
+            msg_index = workflow['message_ids'].index(payload.message_id)
+        except ValueError:
+            logger.warning(f"Message {payload.message_id} not found in workflow message_ids")
+            return
 
-        emoji_str = str(reaction.emoji)
+        match = workflow['song_matches'][msg_index]
 
         if emoji_str in self.SELECT_EMOJIS:
             # Multiple choice selection
@@ -601,9 +614,13 @@ class JamBot(commands.Bot):
             if idx < len(match['spotify_results']):
                 workflow['selections'][match['number']] = match['spotify_results'][idx]
                 logger.info(f"Admin selected option {idx + 1} for song {match['number']}")
-                await reaction.message.channel.send(
-                    f"✅ Selected option {idx + 1} for **{match['title']}**"
-                )
+                # Send confirmation via DM
+                try:
+                    user = await self.fetch_user(payload.user_id)
+                    dm_channel = await user.create_dm()
+                    await dm_channel.send(f"✅ Selected option {idx + 1} for **{match['title']}**")
+                except Exception as e:
+                    logger.error(f"Failed to send selection confirmation: {e}")
 
     async def create_playlist_from_workflow(self, workflow: Dict):
         """Create Spotify playlist from approved workflow.

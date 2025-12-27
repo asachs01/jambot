@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fix crash when creating playlist with missing selections when DISCORD_ADMIN_ID env var is not set. Now uses database approvers instead.
 - Improve error message for missing song selections to explain how to retry after selecting songs.
+- Switch to raw reaction events for more reliable DM reaction handling.
 
 ## [1.0.0] - 2025-12-16
 
