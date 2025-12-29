@@ -106,12 +106,30 @@ class Database:
             updated_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())
         );
 
+        CREATE TABLE IF NOT EXISTS approval_workflows (
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            setlist_data JSONB NOT NULL,
+            song_matches JSONB NOT NULL,
+            selections JSONB NOT NULL DEFAULT '{}',
+            original_channel_id BIGINT NOT NULL,
+            message_ids JSONB NOT NULL DEFAULT '[]',
+            summary_message_id BIGINT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+
         CREATE INDEX IF NOT EXISTS idx_songs_guild_title ON songs(guild_id, song_title);
         CREATE INDEX IF NOT EXISTS idx_setlists_guild_date ON setlists(guild_id, date);
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_setlist_id ON setlist_songs(setlist_id);
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_song_id ON setlist_songs(song_id);
         CREATE INDEX IF NOT EXISTS idx_bot_configuration_guild_id ON bot_configuration(guild_id);
         CREATE INDEX IF NOT EXISTS idx_spotify_tokens_guild_id ON spotify_tokens(guild_id);
+        CREATE INDEX IF NOT EXISTS idx_approval_workflows_status ON approval_workflows(status);
+        CREATE INDEX IF NOT EXISTS idx_approval_workflows_guild_user ON approval_workflows(guild_id, user_id);
+        CREATE INDEX IF NOT EXISTS idx_approval_workflows_message_ids ON approval_workflows USING GIN (message_ids);
         """
 
         # Migration for existing databases: add setlist pattern columns if they don't exist
@@ -542,3 +560,218 @@ class Database:
                 (guild_id,)
             )
             return cursor.fetchone() is not None
+
+    # ==================== Workflow Persistence Methods ====================
+
+    def create_workflow(
+        self,
+        guild_id: int,
+        user_id: int,
+        setlist_data: Dict[str, Any],
+        song_matches: List[Dict[str, Any]],
+        original_channel_id: int,
+        selections: Dict[int, Any] = None,
+        message_ids: List[int] = None,
+        summary_message_id: int = None
+    ) -> int:
+        """Create a new approval workflow in the database.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            user_id: Discord user ID who will receive the workflow.
+            setlist_data: Setlist metadata (date, time, etc.).
+            song_matches: List of song match dictionaries.
+            original_channel_id: Channel where setlist was posted.
+            selections: Optional dict of song selections.
+            message_ids: Optional list of DM message IDs.
+            summary_message_id: Optional summary message ID.
+
+        Returns:
+            Workflow database ID.
+        """
+        import json
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO approval_workflows
+                   (guild_id, user_id, setlist_data, song_matches, selections,
+                    original_channel_id, message_ids, summary_message_id, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending')
+                   RETURNING id""",
+                (
+                    guild_id,
+                    user_id,
+                    json.dumps(setlist_data),
+                    json.dumps(song_matches),
+                    json.dumps(selections or {}),
+                    original_channel_id,
+                    json.dumps(message_ids or []),
+                    summary_message_id
+                )
+            )
+            workflow_id = cursor.fetchone()[0]
+            logger.info(f"Created workflow {workflow_id} for user {user_id} in guild {guild_id}")
+            return workflow_id
+
+    def update_workflow(
+        self,
+        workflow_id: int,
+        selections: Dict[int, Any] = None,
+        message_ids: List[int] = None,
+        summary_message_id: int = None,
+        status: str = None
+    ):
+        """Update an existing workflow.
+
+        Args:
+            workflow_id: Workflow database ID.
+            selections: Optional updated selections dict.
+            message_ids: Optional updated message IDs list.
+            summary_message_id: Optional summary message ID.
+            status: Optional new status ('pending', 'completed', 'cancelled').
+        """
+        import json
+
+        updates = []
+        params = []
+
+        if selections is not None:
+            updates.append("selections = %s")
+            params.append(json.dumps(selections))
+        if message_ids is not None:
+            updates.append("message_ids = %s")
+            params.append(json.dumps(message_ids))
+        if summary_message_id is not None:
+            updates.append("summary_message_id = %s")
+            params.append(summary_message_id)
+        if status is not None:
+            updates.append("status = %s")
+            params.append(status)
+
+        if not updates:
+            return
+
+        updates.append("updated_at = NOW()")
+        params.append(workflow_id)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"UPDATE approval_workflows SET {', '.join(updates)} WHERE id = %s",
+                params
+            )
+            logger.debug(f"Updated workflow {workflow_id}")
+
+    def get_workflow_by_id(self, workflow_id: int) -> Optional[Dict[str, Any]]:
+        """Get a workflow by its database ID.
+
+        Args:
+            workflow_id: Workflow database ID.
+
+        Returns:
+            Workflow dictionary if found, None otherwise.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM approval_workflows WHERE id = %s",
+                (workflow_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return self._parse_workflow_row(row)
+            return None
+
+    def get_workflow_by_message_id(self, message_id: int) -> Optional[Dict[str, Any]]:
+        """Get a workflow that contains a specific message ID.
+
+        Args:
+            message_id: Discord message ID to search for.
+
+        Returns:
+            Workflow dictionary if found, None otherwise.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # Search in message_ids array or summary_message_id
+            cursor.execute(
+                """SELECT * FROM approval_workflows
+                   WHERE (message_ids @> %s OR summary_message_id = %s)
+                   AND status = 'pending'""",
+                (f'[{message_id}]', message_id)
+            )
+            row = cursor.fetchone()
+            if row:
+                return self._parse_workflow_row(row)
+            return None
+
+    def get_pending_workflows(self) -> List[Dict[str, Any]]:
+        """Get all pending workflows.
+
+        Returns:
+            List of workflow dictionaries.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM approval_workflows WHERE status = 'pending' ORDER BY created_at"
+            )
+            return [self._parse_workflow_row(row) for row in cursor.fetchall()]
+
+    def delete_workflow(self, workflow_id: int):
+        """Delete a workflow from the database.
+
+        Args:
+            workflow_id: Workflow database ID.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM approval_workflows WHERE id = %s",
+                (workflow_id,)
+            )
+            logger.info(f"Deleted workflow {workflow_id}")
+
+    def mark_workflow_completed(self, workflow_id: int):
+        """Mark a workflow as completed.
+
+        Args:
+            workflow_id: Workflow database ID.
+        """
+        self.update_workflow(workflow_id, status='completed')
+        logger.info(f"Marked workflow {workflow_id} as completed")
+
+    def mark_workflow_cancelled(self, workflow_id: int):
+        """Mark a workflow as cancelled.
+
+        Args:
+            workflow_id: Workflow database ID.
+        """
+        self.update_workflow(workflow_id, status='cancelled')
+        logger.info(f"Marked workflow {workflow_id} as cancelled")
+
+    def _parse_workflow_row(self, row: Dict) -> Dict[str, Any]:
+        """Parse a workflow database row into a workflow dictionary.
+
+        Args:
+            row: Database row dictionary.
+
+        Returns:
+            Parsed workflow dictionary with proper types.
+        """
+        workflow = dict(row)
+
+        # JSONB columns are automatically parsed by psycopg2, but ensure proper types
+        # Convert integer keys in selections back from strings (JSON keys are always strings)
+        if workflow.get('selections'):
+            workflow['selections'] = {
+                int(k): v for k, v in workflow['selections'].items()
+            }
+        else:
+            workflow['selections'] = {}
+
+        if not workflow.get('message_ids'):
+            workflow['message_ids'] = []
+
+        return workflow
