@@ -227,9 +227,31 @@ class JamBot(commands.Bot):
                 )
                 return
 
-            # Update workflow selection
+            # Persist song to database immediately
             workflow = self.active_workflows[workflow_id]
-            workflow['selections'][song_number] = track_info
+            song_title = None
+            for match in workflow["song_matches"]:
+                if match["number"] == song_number:
+                    song_title = match["name"]
+                    break
+            
+            try:
+                self.db.add_or_update_song(
+                    guild_id=guild_id,
+                    song_title=song_title,
+                    spotify_track_id=track_info["id"],
+                    spotify_track_name=track_info["name"],
+                    artist=track_info["artist"],
+                    album=track_info["album"],
+                    spotify_url=track_info["url"]
+                )
+                logger.info(f"Stored manual song submission for '{track_info['name']}' via DM reply")
+            except Exception as db_error:
+                logger.error(f"Failed to persist manual song submission to database: {db_error}", exc_info=True)
+                # Continue to send confirmation message even if database storage fails
+            
+            # Update workflow selection
+            workflow["selections"][song_number] = track_info
 
             logger.info(
                 f"Updated song {song_number} with manual selection: "
@@ -613,7 +635,28 @@ class JamBot(commands.Bot):
             # Multiple choice selection
             idx = self.SELECT_EMOJIS.index(emoji_str)
             if idx < len(match['spotify_results']):
-                workflow['selections'][match['number']] = match['spotify_results'][idx]
+                track_info = match['spotify_results'][idx]
+                
+                # Persist song to database immediately
+                guild_id = workflow.get('guild_id', 0)
+                song_title = match.get('name') or match.get('title')
+                
+                try:
+                    self.db.add_or_update_song(
+                        guild_id=guild_id,
+                        song_title=song_title,
+                        spotify_track_id=track_info["id"],
+                        spotify_track_name=track_info["name"],
+                        artist=track_info["artist"],
+                        album=track_info["album"],
+                        spotify_url=track_info["url"]
+                    )
+                    logger.info(f"Stored emoji reaction song selection for '{track_info['name']}' via reaction")
+                except Exception as db_error:
+                    logger.error(f"Failed to persist emoji reaction selection to database: {db_error}", exc_info=True)
+                    # Continue to send confirmation message even if database storage fails
+                
+                workflow['selections'][match['number']] = track_info
                 logger.info(f"Admin selected option {idx + 1} for song {match['number']}")
                 # Send confirmation via DM
                 try:
