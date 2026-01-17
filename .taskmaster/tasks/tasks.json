@@ -217,13 +217,43 @@
           }
         ],
         "updatedAt": "2025-11-17T14:32:38.964Z"
+      },
+      {
+        "id": "12",
+        "title": "Fix Workflow Cleanup Bug: Preserve Active Workflows When Missing Songs Detected",
+        "description": "Fix the bug where re-adding ✅ reaction after fixing missing song selections doesn't trigger playlist creation because the workflow is prematurely cleaned up in the finally block.",
+        "details": "ROOT CAUSE: The create_playlist_from_workflow() function in src/bot.py (lines 764-772) has a try/finally block where cleanup_workflow() is unconditionally called in the finally clause. When missing songs are detected (lines 641-664), the function returns early but the finally block still executes, removing the workflow from self.active_workflows. When users later fix missing songs and re-add ✅, on_raw_reaction_add() can't find the workflow and silently ignores the reaction.\n\nIMPLEMENTATION STEPS:\n1. Remove cleanup_workflow() from the finally block (lines 764-772) in create_playlist_from_workflow()\n2. Add explicit cleanup_workflow() call at the end of successful playlist creation path (after playlist is created and posted)\n3. Ensure cleanup_workflow() is called in the cancellation handler (❌ reaction path)\n4. Do NOT call cleanup_workflow() when returning early due to missing songs (lines 641-664) - the workflow must remain active\n5. Add logging statements to track workflow lifecycle:\n   - Log when workflow is created/added to active_workflows\n   - Log when missing songs are detected (workflow should remain active)\n   - Log when workflow is successfully completed (before cleanup)\n   - Log when workflow is cancelled (before cleanup)\n   - Log when cleanup_workflow() is called with workflow_id\n\nSPECIFIC CODE CHANGES:\n- src/bot.py lines 764-772: Remove the finally block entirely or remove cleanup_workflow() from it\n- src/bot.py lines 641-664: Add logging statement confirming workflow remains active when missing songs detected\n- src/bot.py: Add cleanup_workflow() call after successful playlist creation (after posting to Discord)\n- src/bot.py lines 565-624: Verify on_raw_reaction_add() properly handles re-triggering for existing workflows\n- src/bot.py: Add cleanup_workflow() to cancellation (❌) reaction handler if not already present\n- Add debug logging throughout workflow lifecycle for troubleshooting\n\nEDGE CASES TO HANDLE:\n- Multiple missing song detection cycles (user adds ✅ multiple times before fixing all songs)\n- User cancels (❌) after missing songs detected - should still clean up\n- Concurrent reactions on same workflow\n- Workflow timeout scenarios (if implemented)",
+        "testStrategy": "1. MISSING SONGS WORKFLOW TEST:\n   - Trigger setlist detection with intentionally incomplete song selections\n   - Add ✅ reaction and verify error message is sent indicating missing songs\n   - Check logs to confirm workflow remains in active_workflows (not cleaned up)\n   - Select the missing songs using number reactions\n   - Remove and re-add ✅ reaction\n   - Verify playlist creation is successfully triggered\n   - Confirm workflow is cleaned up after successful creation\n\n2. SUCCESSFUL CREATION TEST:\n   - Complete full workflow with all songs selected\n   - Add ✅ reaction\n   - Verify playlist is created and posted\n   - Check logs to confirm cleanup_workflow() is called\n   - Verify workflow is removed from active_workflows\n\n3. CANCELLATION TEST:\n   - Start workflow with missing songs\n   - Add ✅ to trigger missing songs error\n   - Add ❌ reaction to cancel\n   - Verify workflow is cleaned up\n   - Check logs to confirm cleanup_workflow() was called\n\n4. MULTIPLE MISSING SONGS CYCLES:\n   - Add ✅ with some songs missing\n   - Select some (but not all) missing songs\n   - Re-add ✅ and verify still shows missing songs error\n   - Workflow should still be active\n   - Complete all selections and re-add ✅\n   - Verify successful playlist creation\n\n5. LOGGING VERIFICATION:\n   - Review logs for all test scenarios\n   - Confirm workflow lifecycle is properly tracked (creation, missing songs detection, completion, cleanup)\n   - Verify no silent failures or orphaned workflows\n\n6. REGRESSION TEST:\n   - Run through normal happy path workflow to ensure no functionality was broken\n   - Verify all existing approval scenarios still work correctly",
+        "status": "done",
+        "dependencies": [
+          "6",
+          "8"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-01-17T00:51:10.964Z"
+      },
+      {
+        "id": "13",
+        "title": "Fix Bug: Persist Manual DM Song Submissions to Database Immediately",
+        "description": "Fix the bug where songs submitted via manual DM reply to song suggestion embeds are only stored in memory but not persisted to the database until playlist creation, causing data loss if the approval workflow doesn't complete.",
+        "details": "ROOT CAUSE: In src/bot.py, the handle_dm_message() function (line 155) allows users to reply to song suggestion embeds with Spotify URLs. When they do, it updates workflow['selections'][song_number] in memory (line 232) and sends a confirmation message (lines 240-245), but never calls db.add_or_update_song() to persist the song to the database. Songs are only stored when create_playlist_from_workflow() runs (triggered by ✅ reaction on summary message).\n\nIMPLEMENTATION STEPS:\n1. Locate the handle_dm_message() function in src/bot.py around line 155\n2. After the line that updates workflow['selections'][song_number] (line 232), add a call to persist the song immediately\n3. Extract the guild_id from the workflow dictionary (workflow['guild_id'])\n4. Call self.db.add_or_update_song() with the following parameters:\n   - guild_id: from workflow dict\n   - song_title: the song name from the workflow\n   - spotify_track_id: extracted from the Spotify URL\n   - spotify_url: the URL provided by the user\n   - artist: extract from Spotify track info\n   - album: extract from Spotify track info\n5. Add logging statement: logger.info(f\"Stored manual song submission for '{song_title}' via DM reply to database\")\n6. Wrap the database call in try/except to handle any database errors gracefully and notify the user if storage fails\n7. Ensure the confirmation message (lines 240-245) still sends to the user after successful storage\n8. The song will still be linked to the setlist later when approval completes (existing behavior in create_playlist_from_workflow)\n\nEXAMPLE CODE LOCATION:\n- Reference src/bot.py lines 713-721 for how songs ARE properly stored in create_playlist_from_workflow()\n- Use the same db.add_or_update_song() method pattern from src/database.py line 159\n\nERROR HANDLING:\n- If database storage fails, log the error and notify the user that their submission was received but may need to be resubmitted\n- Ensure workflow selections are still updated even if database storage fails (graceful degradation)",
+        "testStrategy": "1. MANUAL SONG SUBMISSION TEST:\n   - Trigger setlist detection workflow with songs that need manual selection\n   - Reply to a song suggestion embed via DM with a valid Spotify URL\n   - Verify confirmation message is sent to the user\n   - Query the songs table directly and confirm the song was stored with correct spotify_track_id, spotify_url, artist, and album\n   - Check logs for \"Stored manual song submission\" message\n\n2. WORKFLOW COMPLETION TEST:\n   - After manual song submission, complete the approval workflow by adding ✅ reaction\n   - Verify playlist is created successfully\n   - Confirm the manually submitted song appears in the playlist\n   - Check that setlist_songs table contains the link between the song and setlist\n\n3. INCOMPLETE WORKFLOW TEST:\n   - Submit a song manually via DM reply\n   - Do NOT complete the approval workflow (don't add ✅ reaction)\n   - Query the songs table and verify the song is still stored\n   - Restart the bot and verify the song remains in the database\n\n4. DATABASE ERROR HANDLING TEST:\n   - Simulate a database error (temporarily make database read-only or disconnect)\n   - Submit a song via DM reply\n   - Verify user receives appropriate error notification\n   - Confirm workflow selections are still updated in memory\n   - Restore database and verify subsequent submissions work correctly\n\n5. LOGGING VERIFICATION:\n   - Review logs after manual song submission\n   - Confirm log entry includes song title, guild_id, and success/failure status\n   - Verify log level is appropriate (INFO for success, ERROR for failures)",
+        "status": "done",
+        "dependencies": [
+          "4",
+          "5"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-01-17T01:03:17.918Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-11-17T14:32:38.964Z",
-      "taskCount": 11,
-      "completedCount": 1,
+      "lastModified": "2026-01-17T01:03:17.918Z",
+      "taskCount": 13,
+      "completedCount": 3,
       "tags": [
         "master"
       ]

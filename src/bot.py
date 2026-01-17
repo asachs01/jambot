@@ -100,6 +100,8 @@ class JamBot(commands.Bot):
 
     async def on_connect(self):
         """Called when the bot establishes a connection to Discord."""
+        from src.health_state import health_state
+        health_state.set_connected()
         logger.info("Successfully connected to Discord Gateway")
 
     async def on_ready(self):
@@ -109,6 +111,8 @@ class JamBot(commands.Bot):
 
     async def on_disconnect(self):
         """Called when the bot disconnects from Discord."""
+        from src.health_state import health_state
+        health_state.set_disconnected()
         logger.warning("Disconnected from Discord")
 
     async def on_error(self, event, *args, **kwargs):
