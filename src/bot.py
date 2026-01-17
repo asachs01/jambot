@@ -595,6 +595,7 @@ class JamBot(commands.Bot):
                     await dm_channel.send("❌ Playlist creation cancelled.")
                 except Exception as e:
                     logger.error(f"Failed to send cancellation message: {e}")
+                logger.info(f"Cleaning up workflow {workflow.get('summary_message_id')} after cancellation")
                 self.cleanup_workflow(workflow)
             return
 
@@ -661,6 +662,10 @@ class JamBot(commands.Bot):
                     await dm_channel.send(error_message)
                 else:
                     logger.error(f"Cannot notify about missing songs - no approvers configured: {missing_songs}")
+                logger.info(
+                    f"Workflow {workflow.get('summary_message_id')} remains active (not cleaned up) "
+                    f"so user can correct missing song selections and re-add ✅ reaction to retry playlist creation"
+                )
                 return
 
             # Get guild configuration for playlist name and channel
@@ -760,6 +765,8 @@ class JamBot(commands.Bot):
             )
 
             logger.info(f"Successfully created playlist: {playlist_name}")
+            logger.info(f"Cleaning up workflow {workflow.get('summary_message_id')} after successful creation")
+            self.cleanup_workflow(workflow)
 
         except Exception as e:
             logger.error(f"Error creating playlist: {e}", exc_info=True)
@@ -767,8 +774,7 @@ class JamBot(commands.Bot):
             channel = self.get_channel(workflow.get('original_channel_id')) if workflow else None
             guild_id = channel.guild.id if channel and hasattr(channel, 'guild') else None
             await self.notify_admin(f"❌ Failed to create playlist: {e}", guild_id=guild_id)
-        finally:
-            # Always cleanup workflow to prevent memory leaks
+            logger.info(f"Cleaning up workflow {workflow.get('summary_message_id')} after error")
             self.cleanup_workflow(workflow)
 
     def cleanup_workflow(self, workflow: Dict):
