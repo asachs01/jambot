@@ -1,7 +1,7 @@
 """Main Discord bot implementation for Jambot."""
 import discord
-from discord.ext import commands
-from typing import Optional, List, Dict, Any
+from discord.ext import commands, tasks
+from typing import Optional, List, Dict, Any, Tuple
 import asyncio
 from src.config import Config
 from src.logger import logger
@@ -36,7 +36,81 @@ class JamBot(commands.Bot):
         # Track active approval workflows
         self.active_workflows: Dict[int, Dict] = {}  # message_id -> workflow data
 
+        # Start background task for expired workflow cleanup
+        self.cleanup_expired_workflows.start()
+
         logger.info("JamBot initialized")
+
+    def is_workflow_ready(self, workflow: Dict) -> Tuple[bool, List[str]]:
+        """Check if a workflow has all required selections.
+
+        Args:
+            workflow: Workflow data dictionary.
+
+        Returns:
+            Tuple of (is_ready, list_of_missing_song_titles).
+        """
+        song_matches = workflow.get('song_matches', [])
+        selections = workflow.get('selections', {})
+
+        missing_songs = []
+        for match in song_matches:
+            song_num = str(match['number'])
+            # Song needs selection if it has spotify results but no selection yet
+            if song_num not in selections and len(match.get('spotify_results', [])) > 0:
+                missing_songs.append(match.get('title', f"Song #{match['number']}"))
+
+        return len(missing_songs) == 0, missing_songs
+
+    @tasks.loop(hours=6)
+    async def cleanup_expired_workflows(self):
+        """Background task to clean up expired workflows."""
+        try:
+            expired = self.db.get_expired_workflows()
+            if not expired:
+                logger.info("No expired workflows to clean up")
+                return
+
+            logger.info(f"Found {len(expired)} expired workflows to clean up")
+
+            for workflow in expired:
+                try:
+                    # Update status to expired
+                    self.db.update_workflow_status(
+                        workflow['summary_message_id'],
+                        'expired'
+                    )
+
+                    # Notify initiator/approvers about expiration
+                    guild_id = workflow.get('guild_id')
+                    if guild_id:
+                        await self.notify_admin(
+                            f"⏰ **Workflow Expired**\n\n"
+                            f"Workflow #{workflow['id']} for setlist on "
+                            f"{workflow.get('setlist_data', {}).get('date', 'unknown date')} "
+                            f"has expired without completion.\n\n"
+                            f"Use `/jambot-process` to create a new workflow if needed.",
+                            guild_id=guild_id
+                        )
+
+                    # Cleanup from active workflows
+                    self.cleanup_workflow(workflow)
+
+                    logger.info(f"Cleaned up expired workflow {workflow['id']}")
+
+                except Exception as e:
+                    logger.error(
+                        f"Error cleaning up workflow {workflow.get('id')}: {e}",
+                        exc_info=True
+                    )
+
+        except Exception as e:
+            logger.error(f"Error in cleanup_expired_workflows task: {e}", exc_info=True)
+
+    @cleanup_expired_workflows.before_loop
+    async def before_cleanup_expired_workflows(self):
+        """Wait until bot is ready before starting cleanup task."""
+        await self.wait_until_ready()
 
     def get_parser_for_guild(self, guild_id: int) -> SetlistParser:
         """Get a parser configured with guild-specific patterns if available.
@@ -751,6 +825,7 @@ class JamBot(commands.Bot):
             if missing_songs:
                 # Get approvers from database using guild_id from workflow
                 guild_id = workflow.get('guild_id')
+                workflow_id = workflow.get('id', 'unknown')
                 approver_ids = self.db.get_approver_ids(guild_id) if guild_id else []
 
                 # Fall back to env var if no approvers configured
@@ -758,10 +833,14 @@ class JamBot(commands.Bot):
                     approver_ids = [int(Config.DISCORD_ADMIN_ID)]
 
                 error_message = (
-                    f"⚠️ **Cannot create playlist** - Missing selections for:\n" +
+                    f"⚠️ **Cannot create playlist** (Workflow #{workflow_id})\n\n"
+                    f"**Missing selections for:**\n" +
                     "\n".join(f"- {song}" for song in missing_songs) +
-                    "\n\n**To fix:** Select the missing songs above using the number reactions (1️⃣, 2️⃣, 3️⃣), "
-                    "then remove your ✅ reaction from the summary message and add it again."
+                    "\n\n**How to fix:**\n"
+                    "1. Select the missing songs using reactions (1️⃣, 2️⃣, 3️⃣) or reply with a Spotify URL\n"
+                    f"2. Run `/jambot-retry {workflow_id}` to create the playlist\n\n"
+                    f"Or use `/jambot-workflow-status` to check your workflows, "
+                    f"or `/jambot-cancel-workflow {workflow_id}` to cancel."
                 )
 
                 if approver_ids:

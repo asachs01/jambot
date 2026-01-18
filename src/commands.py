@@ -1114,4 +1114,276 @@ class JambotCommands:
             )
             logger.error(f"Error in feedback command: {error}", exc_info=True)
 
+        @self.tree.command(
+            name="jambot-retry",
+            description="Retry playlist creation for a workflow with missing selections"
+        )
+        @app_commands.describe(
+            workflow_id="Workflow ID (optional - defaults to most recent)"
+        )
+        async def retry_command(
+            interaction: discord.Interaction,
+            workflow_id: Optional[int] = None
+        ):
+            """Retry playlist creation after fixing missing selections.
+
+            Args:
+                interaction: Discord interaction object.
+                workflow_id: Optional workflow database ID.
+            """
+            try:
+                logger.info(
+                    f"Retry command invoked by {interaction.user.id} "
+                    f"in guild {interaction.guild_id} for workflow {workflow_id}"
+                )
+
+                # Get workflow - either by ID or most recent for user
+                if workflow_id:
+                    workflow = self.db.get_workflow_by_id(workflow_id)
+                    if not workflow or workflow['guild_id'] != interaction.guild_id:
+                        await interaction.response.send_message(
+                            f"❌ Workflow #{workflow_id} not found in this server.",
+                            ephemeral=True
+                        )
+                        return
+                else:
+                    workflow = self.db.get_most_recent_workflow_for_user(
+                        interaction.guild_id,
+                        interaction.user.id
+                    )
+                    if not workflow:
+                        await interaction.response.send_message(
+                            "❌ No active workflows found for you in this server.\n"
+                            "Use `/jambot-process` to start a new workflow.",
+                            ephemeral=True
+                        )
+                        return
+
+                # Check if workflow is ready
+                is_ready, missing_songs = self.bot.is_workflow_ready(workflow)
+
+                if not is_ready:
+                    missing_list = "\n".join(f"- {song}" for song in missing_songs)
+                    await interaction.response.send_message(
+                        f"⚠️ **Workflow #{workflow['id']} still has missing selections:**\n\n"
+                        f"{missing_list}\n\n"
+                        f"Please select the missing songs using the number reactions "
+                        f"(1️⃣, 2️⃣, 3️⃣) in the DM workflow, or reply with a Spotify URL.\n\n"
+                        f"Once selections are complete, run `/jambot-retry` again.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Workflow is ready - trigger playlist creation
+                await interaction.response.defer(ephemeral=True)
+
+                # Load workflow into active_workflows if not already there
+                summary_msg_id = workflow['summary_message_id']
+                if summary_msg_id not in self.bot.active_workflows:
+                    for msg_id in workflow['message_ids'] + [summary_msg_id]:
+                        self.bot.active_workflows[msg_id] = workflow
+
+                await self.bot.create_playlist_from_workflow(workflow)
+
+                await interaction.followup.send(
+                    f"✅ **Playlist creation triggered for workflow #{workflow['id']}!**\n"
+                    f"Check the playlist channel for the result.",
+                    ephemeral=True
+                )
+
+            except Exception as e:
+                logger.error(f"Error in retry command: {e}", exc_info=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        f"❌ Error retrying workflow: {str(e)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        f"❌ Error retrying workflow: {str(e)}",
+                        ephemeral=True
+                    )
+
+        @self.tree.command(
+            name="jambot-workflow-status",
+            description="Show active approval workflows and their status"
+        )
+        @app_commands.describe(
+            show_all="Show all workflows in this server (admin only)"
+        )
+        async def workflow_status_command(
+            interaction: discord.Interaction,
+            show_all: Optional[bool] = False
+        ):
+            """Show active workflows and their selection progress.
+
+            Args:
+                interaction: Discord interaction object.
+                show_all: Whether to show all workflows (admin only).
+            """
+            try:
+                logger.info(
+                    f"Workflow status command invoked by {interaction.user.id} "
+                    f"in guild {interaction.guild_id}"
+                )
+
+                # Check admin permission for show_all
+                if show_all and not interaction.user.guild_permissions.administrator:
+                    await interaction.response.send_message(
+                        "❌ Only administrators can view all workflows.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Get workflows
+                if show_all:
+                    # Get all active workflows for the guild
+                    all_workflows = self.db.get_all_active_workflows()
+                    workflows = [w for w in all_workflows if w['guild_id'] == interaction.guild_id]
+                else:
+                    workflows = self.db.get_workflows_for_user(
+                        interaction.guild_id,
+                        interaction.user.id
+                    )
+
+                if not workflows:
+                    await interaction.response.send_message(
+                        "📋 No active workflows found.\n\n"
+                        "Workflows are created when a jam leader posts a setlist.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Build embed
+                embed = discord.Embed(
+                    title="📋 Active Approval Workflows",
+                    color=discord.Color.blue()
+                )
+
+                for wf in workflows[:10]:  # Limit to 10 workflows
+                    setlist_data = wf.get('setlist_data', {})
+                    song_matches = wf.get('song_matches', [])
+                    selections = wf.get('selections', {})
+
+                    # Calculate selection progress
+                    total_songs = len(song_matches)
+                    selected_songs = len(selections)
+
+                    # Determine status
+                    is_ready, missing = self.bot.is_workflow_ready(wf)
+                    if is_ready:
+                        status_emoji = "✅"
+                        status_text = "Ready to create playlist"
+                    else:
+                        status_emoji = "⏳"
+                        status_text = f"{len(missing)} missing selection(s)"
+
+                    # Format field
+                    date_str = setlist_data.get('date', 'Unknown date')
+                    time_str = setlist_data.get('time', 'Unknown time')
+                    created = wf.get('created_at', 'Unknown')
+
+                    field_value = (
+                        f"**Date:** {date_str} ({time_str})\n"
+                        f"**Progress:** {selected_songs}/{total_songs} songs\n"
+                        f"**Status:** {status_emoji} {status_text}\n"
+                        f"**Created:** {created}"
+                    )
+
+                    embed.add_field(
+                        name=f"Workflow #{wf['id']}",
+                        value=field_value,
+                        inline=False
+                    )
+
+                embed.set_footer(
+                    text="Use /jambot-retry <id> to retry playlist creation, "
+                         "or /jambot-cancel-workflow <id> to cancel"
+                )
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            except Exception as e:
+                logger.error(f"Error in workflow status command: {e}", exc_info=True)
+                await interaction.response.send_message(
+                    f"❌ Error retrieving workflow status: {str(e)}",
+                    ephemeral=True
+                )
+
+        @self.tree.command(
+            name="jambot-cancel-workflow",
+            description="Cancel an active approval workflow"
+        )
+        @app_commands.describe(
+            workflow_id="Workflow ID to cancel (required)"
+        )
+        async def cancel_workflow_command(
+            interaction: discord.Interaction,
+            workflow_id: int
+        ):
+            """Cancel and cleanup an active workflow.
+
+            Args:
+                interaction: Discord interaction object.
+                workflow_id: Workflow database ID to cancel.
+            """
+            try:
+                logger.info(
+                    f"Cancel workflow command invoked by {interaction.user.id} "
+                    f"in guild {interaction.guild_id} for workflow {workflow_id}"
+                )
+
+                # Get workflow
+                workflow = self.db.get_workflow_by_id(workflow_id)
+
+                if not workflow:
+                    await interaction.response.send_message(
+                        f"❌ Workflow #{workflow_id} not found.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Verify guild match
+                if workflow['guild_id'] != interaction.guild_id:
+                    await interaction.response.send_message(
+                        f"❌ Workflow #{workflow_id} is not in this server.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Check permissions - user must be admin or involved in workflow
+                is_admin = interaction.user.guild_permissions.administrator
+                is_initiator = workflow.get('initiated_by') == interaction.user.id
+                approver_ids = workflow.get('approver_ids', [])
+                is_approver = interaction.user.id in approver_ids
+
+                if not (is_admin or is_initiator or is_approver):
+                    await interaction.response.send_message(
+                        "❌ You don't have permission to cancel this workflow.\n"
+                        "Only administrators, the initiator, or approvers can cancel.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Update status to cancelled
+                self.db.update_workflow_status(workflow['summary_message_id'], 'cancelled')
+
+                # Cleanup from active_workflows
+                self.bot.cleanup_workflow(workflow)
+
+                await interaction.response.send_message(
+                    f"✅ **Workflow #{workflow_id} cancelled successfully.**\n\n"
+                    f"The workflow has been removed and no playlist will be created.",
+                    ephemeral=True
+                )
+
+                logger.info(f"Workflow {workflow_id} cancelled by user {interaction.user.id}")
+
+            except Exception as e:
+                logger.error(f"Error in cancel workflow command: {e}", exc_info=True)
+                await interaction.response.send_message(
+                    f"❌ Error cancelling workflow: {str(e)}",
+                    ephemeral=True
+                )
+
         logger.info("Slash commands registered")

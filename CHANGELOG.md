@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Post-playlist satisfaction ratings with thumbs up/down reactions
 - Usage analytics tracking for playlists created, commands used, and feedback submitted
 - New database tables: `feedback` for user feedback, `usage_stats` for aggregated analytics
+- `/jambot-retry` command to retry playlist creation after fixing missing song selections
+- `/jambot-workflow-status` command to view active approval workflows and their progress
+- `/jambot-cancel-workflow` command to explicitly cancel an active workflow
+- Workflow expiration: workflows automatically expire after 48 hours and are cleaned up every 6 hours
+- Improved error messages for missing song selections with workflow ID and clear instructions
 
 ### Fixed
 - Fix crash when creating playlist with missing selections when DISCORD_ADMIN_ID env var is not set. Now uses database approvers instead.
