@@ -249,7 +249,7 @@ class JamBot(commands.Bot):
             song_title = None
             for match in workflow["song_matches"]:
                 if match["number"] == song_number:
-                    song_title = match["name"]
+                    song_title = match.get("title") or match.get("name")
                     break
             
             try:
