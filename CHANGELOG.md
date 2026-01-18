@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switch to raw reaction events for more reliable DM reaction handling.
 - Fix workflow cleanup bug: workflows now remain active when missing songs detected, allowing users to fix and retry with checkmark
 - Fix manual song submissions: songs submitted via DM reply or emoji reaction are now persisted to database immediately
+- Persist active approval workflows to database so they survive bot restarts
+- Fix Spotify API errors in headless environments by using access token directly instead of auth_manager
 
 ## [1.0.0] - 2025-12-16
 
