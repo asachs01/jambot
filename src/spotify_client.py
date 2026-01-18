@@ -3,6 +3,7 @@ import time
 from typing import List, Optional, Dict, Any
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from spotipy.cache_handler import MemoryCacheHandler
 from src.config import Config
 from src.logger import logger
 
@@ -182,12 +183,16 @@ class SpotifyClient:
             tokens = self._get_tokens_from_db()
 
             # Create auth manager with guild-specific credentials
+            # Use MemoryCacheHandler to avoid file-based caching issues in containers
+            # Set open_browser=False to prevent interactive prompts in headless environment
             auth_manager = SpotifyOAuth(
                 client_id=self.credentials['client_id'],
                 client_secret=self.credentials['client_secret'],
                 redirect_uri=self.credentials['redirect_uri'],
                 scope="playlist-modify-public playlist-modify-private user-read-private",
                 requests_timeout=10,
+                open_browser=False,
+                cache_handler=MemoryCacheHandler(),
             )
 
             # Set token info
@@ -542,6 +547,8 @@ class SpotifyClient:
                 redirect_uri=self.credentials['redirect_uri'],
                 scope="playlist-modify-public playlist-modify-private user-read-private",
                 requests_timeout=10,
+                open_browser=False,
+                cache_handler=MemoryCacheHandler(),
             )
 
             # Exchange code for tokens
@@ -587,6 +594,8 @@ class SpotifyClient:
                 redirect_uri=Config.SPOTIFY_REDIRECT_URI,
                 scope="playlist-modify-public playlist-modify-private user-read-private",
                 requests_timeout=10,
+                open_browser=False,
+                cache_handler=MemoryCacheHandler(),
             )
 
             token_info = auth_manager.refresh_access_token(tokens['refresh_token'])
