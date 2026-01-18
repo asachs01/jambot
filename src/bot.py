@@ -107,6 +107,19 @@ class JamBot(commands.Bot):
     async def on_ready(self):
         """Called when the bot successfully connects to Discord."""
         logger.info(f"Bot logged in as {self.user} (ID: {self.user.id})")
+
+        # Restore active workflows from database
+        try:
+            workflows = self.db.get_all_active_workflows()
+            for workflow in workflows:
+                summary_msg_id = workflow['summary_message_id']
+                # Populate active_workflows dict for all message IDs
+                for msg_id in workflow['message_ids'] + [summary_msg_id]:
+                    self.active_workflows[msg_id] = workflow
+            logger.info(f"Restored {len(workflows)} active workflows from database")
+        except Exception as e:
+            logger.error(f"Failed to restore workflows from database: {e}", exc_info=True)
+
         logger.info("Bot is ready. Use /jambot-setup to configure jam leaders and approvers in each server.")
 
     async def on_disconnect(self):
@@ -256,6 +269,15 @@ class JamBot(commands.Bot):
             
             # Update workflow selection
             workflow["selections"][song_number] = track_info
+
+            # Persist to database
+            try:
+                summary_msg_id = workflow.get('summary_message_id')
+                if summary_msg_id:
+                    self.db.update_workflow_selection(summary_msg_id, song_number, track_info)
+                    logger.info(f"Persisted manual selection for song {song_number} to database")
+            except Exception as e:
+                logger.error(f"Failed to persist manual selection to database: {e}", exc_info=True)
 
             logger.info(
                 f"Updated song {song_number} with manual selection: "
@@ -518,6 +540,14 @@ class JamBot(commands.Bot):
         for msg_id in workflow_data['message_ids'] + [summary_msg.id]:
             self.active_workflows[msg_id] = workflow_data
 
+        # Persist to database
+        try:
+            self.db.save_workflow(workflow_data, summary_msg.id)
+            logger.info(f"Persisted workflow {summary_msg.id} to database")
+        except Exception as e:
+            logger.error(f"Failed to persist workflow to database: {e}", exc_info=True)
+            # Continue - in-memory workflow still functional
+
         logger.info(f"Sent approval workflow to user {user_id} for {len(song_matches)} songs")
 
     async def create_song_approval_embed(self, match: Dict) -> discord.Embed:
@@ -662,6 +692,16 @@ class JamBot(commands.Bot):
                 
                 workflow['selections'][match['number']] = track_info
                 logger.info(f"Admin selected option {idx + 1} for song {match['number']}")
+
+                # Persist selection to database
+                try:
+                    summary_msg_id = workflow.get('summary_message_id')
+                    if summary_msg_id:
+                        self.db.update_workflow_selection(summary_msg_id, match['number'], track_info)
+                        logger.info(f"Persisted selection for song {match['number']} to database")
+                except Exception as e:
+                    logger.error(f"Failed to persist selection to database: {e}", exc_info=True)
+
                 # Send confirmation via DM
                 try:
                     user = await self.fetch_user(payload.user_id)
@@ -834,6 +874,15 @@ class JamBot(commands.Bot):
         for msg_id in workflow['message_ids'] + [workflow.get('summary_message_id')]:
             if msg_id in self.active_workflows:
                 del self.active_workflows[msg_id]
+
+        # Delete from database
+        try:
+            summary_msg_id = workflow.get('summary_message_id')
+            if summary_msg_id:
+                self.db.delete_workflow(summary_msg_id)
+                logger.info(f"Deleted workflow {summary_msg_id} from database")
+        except Exception as e:
+            logger.error(f"Failed to delete workflow from database: {e}", exc_info=True)
 
         logger.info("Cleaned up workflow")
 
