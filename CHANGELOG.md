@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Health check now monitors Discord connection status - returns 503 when disconnected to trigger automatic restart
+- `/jambot-feedback` command for users to submit bug reports, feature requests, and general feedback
+- Feedback notifications sent to maintainer via DM (configure with `FEEDBACK_NOTIFY_USER_ID`)
+- Post-playlist satisfaction ratings with thumbs up/down reactions
+- Usage analytics tracking for playlists created, commands used, and feedback submitted
+- New database tables: `feedback` for user feedback, `usage_stats` for aggregated analytics
 
 ### Fixed
 - Fix crash when creating playlist with missing selections when DISCORD_ADMIN_ID env var is not set. Now uses database approvers instead.

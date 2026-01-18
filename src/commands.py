@@ -8,6 +8,111 @@ from src.database import Database
 from src.setlist_parser import SetlistParser
 
 
+class FeedbackModal(Modal, title="Send Feedback"):
+    """Modal for submitting user feedback.
+
+    Allows users to report bugs, request features, or provide general feedback.
+    Feedback is stored in the database and optionally sent to the maintainer.
+    """
+
+    feedback_type = TextInput(
+        label="Feedback Type",
+        placeholder="bug, feature, or general",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=20,
+        default="general"
+    )
+
+    message = TextInput(
+        label="Your Feedback",
+        placeholder="Tell us what's on your mind...",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=1000
+    )
+
+    context = TextInput(
+        label="Additional Context (optional)",
+        placeholder="Any extra details that might help (e.g., what you were trying to do)",
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=500
+    )
+
+    def __init__(self, db: Database, bot):
+        """Initialize the feedback modal.
+
+        Args:
+            db: Database instance for storing feedback.
+            bot: Bot instance for sending notifications.
+        """
+        super().__init__()
+        self.db = db
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        """Handle modal submission.
+
+        Args:
+            interaction: Discord interaction object.
+        """
+        try:
+            # Validate feedback type
+            feedback_type = self.feedback_type.value.strip().lower()
+            if feedback_type not in ['bug', 'feature', 'general']:
+                await interaction.response.send_message(
+                    "❌ Feedback type must be 'bug', 'feature', or 'general'.",
+                    ephemeral=True
+                )
+                return
+
+            # Save feedback to database
+            feedback_id = self.db.save_feedback(
+                guild_id=interaction.guild_id,
+                user_id=interaction.user.id,
+                feedback_type=feedback_type,
+                message=self.message.value,
+                context=self.context.value if self.context.value else None
+            )
+
+            # Track usage
+            self.db.track_usage_event(
+                interaction.guild_id,
+                'feedback_submitted',
+                {'type': feedback_type}
+            )
+
+            # Try to notify maintainer
+            await self.bot.notify_feedback(
+                feedback_id=feedback_id,
+                guild_id=interaction.guild_id,
+                user=interaction.user,
+                feedback_type=feedback_type,
+                message=self.message.value,
+                context=self.context.value
+            )
+
+            logger.info(
+                f"Feedback submitted by {interaction.user.id} in guild {interaction.guild_id}: "
+                f"type={feedback_type}, id={feedback_id}"
+            )
+
+            await interaction.response.send_message(
+                f"✅ **Thank you for your feedback!**\n\n"
+                f"Your {feedback_type} feedback has been recorded (ID: #{feedback_id}).\n"
+                f"We appreciate you taking the time to help improve Jambot!",
+                ephemeral=True
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing feedback modal: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Error submitting feedback: {str(e)}",
+                ephemeral=True
+            )
+
+
 class AdvancedSettingsModal(Modal, title="Advanced Settings"):
     """Modal for configuring optional advanced settings.
 
@@ -965,5 +1070,48 @@ class JambotCommands:
                     ephemeral=True
                 )
                 logger.error(f"Error in learn patterns command: {error}", exc_info=True)
+
+        @self.tree.command(
+            name="jambot-feedback",
+            description="Send feedback, report bugs, or request features"
+        )
+        async def feedback_command(interaction: discord.Interaction):
+            """Open feedback modal for submitting user feedback.
+
+            Args:
+                interaction: Discord interaction object.
+            """
+            logger.info(
+                f"Feedback command invoked by {interaction.user.id} "
+                f"in guild {interaction.guild_id}"
+            )
+
+            # Track command usage
+            self.db.track_usage_event(
+                interaction.guild_id,
+                'command_used',
+                {'command': 'jambot-feedback'}
+            )
+
+            # Send the feedback modal
+            modal = FeedbackModal(self.db, self.bot)
+            await interaction.response.send_modal(modal)
+
+        @feedback_command.error
+        async def feedback_error(
+            interaction: discord.Interaction,
+            error: app_commands.AppCommandError
+        ):
+            """Handle errors for the feedback command.
+
+            Args:
+                interaction: Discord interaction object.
+                error: The error that occurred.
+            """
+            await interaction.response.send_message(
+                "❌ An error occurred while processing the command.",
+                ephemeral=True
+            )
+            logger.error(f"Error in feedback command: {error}", exc_info=True)
 
         logger.info("Slash commands registered")

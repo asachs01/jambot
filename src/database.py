@@ -129,6 +129,32 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_bot_configuration_guild_id ON bot_configuration(guild_id);
         CREATE INDEX IF NOT EXISTS idx_spotify_tokens_guild_id ON spotify_tokens(guild_id);
         CREATE INDEX IF NOT EXISTS idx_active_workflows_summary_message ON active_workflows(summary_message_id);
+
+        CREATE TABLE IF NOT EXISTS feedback (
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            feedback_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            context TEXT,
+            rating INTEGER,
+            created_at TIMESTAMP DEFAULT NOW(),
+            notified_maintainer BOOLEAN DEFAULT FALSE
+        );
+
+        CREATE TABLE IF NOT EXISTS usage_stats (
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_data JSONB,
+            event_date DATE DEFAULT CURRENT_DATE,
+            count INTEGER DEFAULT 1,
+            UNIQUE(guild_id, event_type, event_date, event_data)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_guild_id ON feedback(guild_id);
+        CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
+        CREATE INDEX IF NOT EXISTS idx_usage_stats_guild_event ON usage_stats(guild_id, event_type, event_date);
         """
 
         # Migration for existing databases: add setlist pattern columns if they don't exist
@@ -701,3 +727,109 @@ class Database:
                 DELETE FROM active_workflows
                 WHERE summary_message_id = %s
             """, (summary_message_id,))
+
+    def save_feedback(
+        self,
+        guild_id: int,
+        user_id: int,
+        feedback_type: str,
+        message: str,
+        context: Optional[str] = None,
+        rating: Optional[int] = None
+    ) -> int:
+        """Save user feedback to database.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            user_id: Discord user ID who submitted feedback.
+            feedback_type: Type of feedback (bug, feature, general).
+            message: Feedback message content.
+            context: Optional additional context.
+            rating: Optional satisfaction rating (1-5).
+
+        Returns:
+            Feedback ID.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO feedback
+                   (guild_id, user_id, feedback_type, message, context, rating)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   RETURNING id""",
+                (guild_id, user_id, feedback_type, message, context, rating)
+            )
+            feedback_id = cursor.fetchone()[0]
+            logger.info(f"Saved feedback {feedback_id} from user {user_id} in guild {guild_id}")
+            return feedback_id
+
+    def mark_feedback_notified(self, feedback_id: int) -> None:
+        """Mark feedback as having notified maintainer.
+
+        Args:
+            feedback_id: Feedback database ID.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE feedback SET notified_maintainer = TRUE WHERE id = %s",
+                (feedback_id,)
+            )
+
+    def get_unnotified_feedback(self) -> List[Dict[str, Any]]:
+        """Get all feedback that hasn't notified maintainer yet.
+
+        Returns:
+            List of feedback dictionaries.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """SELECT * FROM feedback
+                   WHERE notified_maintainer = FALSE
+                   ORDER BY created_at ASC"""
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def track_usage_event(
+        self,
+        guild_id: int,
+        event_type: str,
+        event_data: Optional[Dict] = None
+    ) -> None:
+        """Track a usage event with upsert (increment count if exists).
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            event_type: Type of event (e.g., 'playlist_created', 'command_used').
+            event_data: Optional additional data as JSON.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Use upsert to increment count for existing events
+            cursor.execute(
+                """INSERT INTO usage_stats (guild_id, event_type, event_data, count)
+                   VALUES (%s, %s, %s, 1)
+                   ON CONFLICT (guild_id, event_type, event_date, event_data)
+                   DO UPDATE SET count = usage_stats.count + 1""",
+                (guild_id, event_type, json.dumps(event_data) if event_data else None)
+            )
+
+    def save_satisfaction_rating(
+        self,
+        guild_id: int,
+        playlist_id: str,
+        rating: int
+    ) -> None:
+        """Save playlist satisfaction rating.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            playlist_id: Spotify playlist ID.
+            rating: 1 for thumbs up, -1 for thumbs down.
+        """
+        self.track_usage_event(
+            guild_id,
+            'playlist_satisfaction',
+            {'playlist_id': playlist_id, 'rating': rating}
+        )

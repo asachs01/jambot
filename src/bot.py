@@ -619,7 +619,7 @@ class JamBot(commands.Bot):
         return embed
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        """Handle reaction additions for approval workflow.
+        """Handle reaction additions for approval workflow and satisfaction ratings.
 
         Uses raw reaction event for reliability - doesn't require message to be cached.
 
@@ -628,6 +628,27 @@ class JamBot(commands.Bot):
         """
         # Ignore bot's own reactions
         if payload.user_id == self.user.id:
+            return
+
+        # Check for satisfaction reaction on playlist messages
+        emoji_str = str(payload.emoji)
+        satisfaction_messages = getattr(self, '_satisfaction_messages', {})
+        if payload.message_id in satisfaction_messages:
+            if emoji_str in ["👍", "👎"]:
+                msg_data = satisfaction_messages[payload.message_id]
+                # Prevent duplicate votes from same user
+                if payload.user_id not in msg_data['voters']:
+                    msg_data['voters'].add(payload.user_id)
+                    rating = 1 if emoji_str == "👍" else -1
+                    self.db.save_satisfaction_rating(
+                        msg_data['guild_id'],
+                        msg_data['playlist_id'],
+                        rating
+                    )
+                    logger.info(
+                        f"Recorded satisfaction rating {rating} for playlist "
+                        f"{msg_data['playlist_id']} from user {payload.user_id}"
+                    )
             return
 
         # Check if reaction is on an active workflow message
@@ -835,15 +856,34 @@ class JamBot(commands.Bot):
                 playlist_info['url']
             )
 
-            # Post to target channel
+            # Track usage analytics
+            self.db.track_usage_event(
+                guild_id or 0,
+                'playlist_created',
+                {'song_count': len(track_uris)}
+            )
+
+            # Post to target channel with satisfaction reactions
             target_channel = self.get_channel(target_channel_id)
             if target_channel:
-                await target_channel.send(
+                playlist_msg = await target_channel.send(
                     f"🎵 **Playlist created!**\n"
                     f"**{playlist_name}**\n"
                     f"{playlist_info['url']}\n"
-                    f"({len(track_uris)} songs)"
+                    f"({len(track_uris)} songs)\n\n"
+                    f"_React with 👍 or 👎 to rate this playlist!_"
                 )
+                # Add satisfaction reaction options
+                await playlist_msg.add_reaction("👍")
+                await playlist_msg.add_reaction("👎")
+
+                # Store message ID for tracking reactions
+                self._satisfaction_messages = getattr(self, '_satisfaction_messages', {})
+                self._satisfaction_messages[playlist_msg.id] = {
+                    'guild_id': guild_id,
+                    'playlist_id': playlist_info['id'],
+                    'voters': set()  # Track who has voted to prevent duplicates
+                }
 
             # Notify approvers
             await self.notify_admin(
@@ -926,3 +966,63 @@ class JamBot(commands.Bot):
 
         except Exception as e:
             logger.error(f"Failed to notify approvers: {e}")
+
+    async def notify_feedback(
+        self,
+        feedback_id: int,
+        guild_id: int,
+        user: discord.User,
+        feedback_type: str,
+        message: str,
+        context: Optional[str] = None
+    ):
+        """Send feedback notification to the configured maintainer.
+
+        Args:
+            feedback_id: Database ID of the feedback.
+            guild_id: Guild where feedback was submitted.
+            user: User who submitted feedback.
+            feedback_type: Type of feedback (bug, feature, general).
+            message: Feedback message content.
+            context: Optional additional context.
+        """
+        try:
+            # Get maintainer user ID from config
+            maintainer_id = Config.FEEDBACK_NOTIFY_USER_ID
+            if not maintainer_id:
+                logger.info("No FEEDBACK_NOTIFY_USER_ID configured - skipping notification")
+                return
+
+            maintainer = await self.fetch_user(int(maintainer_id))
+            if not maintainer:
+                logger.warning(f"Could not find maintainer user {maintainer_id}")
+                return
+
+            # Get guild name for context
+            guild = self.get_guild(guild_id)
+            guild_name = guild.name if guild else f"Guild {guild_id}"
+
+            # Build notification message
+            type_emoji = {"bug": "🐛", "feature": "💡", "general": "💬"}.get(feedback_type, "📝")
+            notification = (
+                f"{type_emoji} **New Feedback** (#{feedback_id})\n\n"
+                f"**Type:** {feedback_type.capitalize()}\n"
+                f"**From:** {user.name} (`{user.id}`)\n"
+                f"**Server:** {guild_name}\n\n"
+                f"**Message:**\n{message}"
+            )
+
+            if context:
+                notification += f"\n\n**Context:**\n{context}"
+
+            # Send DM to maintainer
+            dm_channel = await maintainer.create_dm()
+            await dm_channel.send(notification)
+
+            # Mark as notified in database
+            self.db.mark_feedback_notified(feedback_id)
+
+            logger.info(f"Sent feedback notification #{feedback_id} to maintainer {maintainer_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to send feedback notification: {e}", exc_info=True)
