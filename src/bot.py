@@ -267,8 +267,8 @@ class JamBot(commands.Bot):
                 logger.error(f"Failed to persist manual song submission to database: {db_error}", exc_info=True)
                 # Continue to send confirmation message even if database storage fails
             
-            # Update workflow selection
-            workflow["selections"][song_number] = track_info
+            # Update workflow selection (use string key for JSONB compatibility)
+            workflow["selections"][str(song_number)] = track_info
 
             # Persist to database
             try:
@@ -690,7 +690,7 @@ class JamBot(commands.Bot):
                     logger.error(f"Failed to persist emoji reaction selection to database: {db_error}", exc_info=True)
                     # Continue to send confirmation message even if database storage fails
                 
-                workflow['selections'][match['number']] = track_info
+                workflow['selections'][str(match['number'])] = track_info
                 logger.info(f"Admin selected option {idx + 1} for song {match['number']}")
 
                 # Persist selection to database
@@ -721,9 +721,10 @@ class JamBot(commands.Bot):
             selections = workflow['selections']
 
             # Verify all songs have selections (except rejected ones)
+            # Use string keys for comparison since JSONB always uses string keys
             missing_songs = []
             for match in workflow['song_matches']:
-                if match['number'] not in selections and len(match['spotify_results']) > 0:
+                if str(match['number']) not in selections and len(match['spotify_results']) > 0:
                     missing_songs.append(match['title'])
 
             if missing_songs:
@@ -786,14 +787,15 @@ class JamBot(commands.Bot):
             )
 
             # Prepare track URIs and update database
+            # Sort by numeric value since keys are strings from JSONB
             track_uris = []
-            for song_num in sorted(selections.keys()):
+            for song_num in sorted(selections.keys(), key=int):
                 track = selections[song_num]
 
-                # Find original song title from matches
+                # Find original song title from matches (compare with int since match['number'] is int)
                 song_title = next(
                     m['title'] for m in workflow['song_matches']
-                    if m['number'] == song_num
+                    if m['number'] == int(song_num)
                 )
 
                 # Add/update song in database
@@ -808,7 +810,7 @@ class JamBot(commands.Bot):
                 )
 
                 # Link song to setlist
-                self.db.add_setlist_song(setlist_id, song_id, position=song_num)
+                self.db.add_setlist_song(setlist_id, song_id, position=int(song_num))
 
                 # Add to playlist
                 track_uris.append(track['uri'])

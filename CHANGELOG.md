@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix manual song submissions: songs submitted via DM reply or emoji reaction are now persisted to database immediately
 - Persist active approval workflows to database so they survive bot restarts
 - Fix Spotify API errors in headless environments by using access token directly instead of auth_manager
+- Fix selection key mismatch: use string keys consistently for JSONB compatibility (fixes "missing songs" false positives after restart)
 
 ## [1.0.0] - 2025-12-16
 
