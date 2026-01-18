@@ -1,0 +1,72 @@
+/* JamBot Bluegrass Theme */
+
+:root {
+  /* Primary colors from jambot branding */
+  --sl-color-accent-low: #FFD18A;
+  --sl-color-accent: #C86A2A;
+  --sl-color-accent-high: #A0501E;
+
+  /* Text colors */
+  --sl-color-text: #3B2618;
+  --sl-color-text-accent: #C86A2A;
+
+  /* Background tints */
+  --sl-color-bg-nav: #F2E3C8;
+  --sl-color-bg-sidebar: #FDF8F0;
+
+  /* Spotify green for links and accents */
+  --sl-color-green-high: #1DB954;
+}
+
+/* Dark mode adjustments */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #4D2810;
+  --sl-color-accent: #C86A2A;
+  --sl-color-accent-high: #FFD18A;
+
+  --sl-color-text: #F2E3C8;
+  --sl-color-text-accent: #FFD18A;
+
+  --sl-color-bg-nav: #1A0F08;
+  --sl-color-bg-sidebar: #241408;
+}
+
+/* Hero section styling */
+.sl-hero {
+  background: linear-gradient(135deg, #C86A2A 0%, #A0501E 100%);
+}
+
+.sl-hero .sl-flex {
+  color: white;
+}
+
+/* Links - Spotify green */
+.sl-link-button[data-variant='primary'] {
+  background: #1DB954;
+  border-color: #1DB954;
+}
+
+.sl-link-button[data-variant='primary']:hover {
+  background: #1ed760;
+  border-color: #1ed760;
+}
+
+/* Code blocks */
+.expressive-code {
+  --ec-codeBg: #F8F4ED;
+}
+
+:root[data-theme='dark'] .expressive-code {
+  --ec-codeBg: #1A1410;
+}
+
+/* Sidebar active item */
+.sidebar-content a[aria-current='page'] {
+  background: rgba(200, 106, 42, 0.15);
+  border-left-color: #C86A2A;
+}
+
+/* Logo styling */
+.site-title img {
+  border-radius: 8px;
+}

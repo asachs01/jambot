@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/jambot-cancel-workflow` command to explicitly cancel an active workflow
 - Workflow expiration: workflows automatically expire after 48 hours and are cleaned up every 6 hours
 - Improved error messages for missing song selections with workflow ID and clear instructions
+- Astro Starlight documentation site at jambot.app with bluegrass branding
+- GitHub Actions workflow for automatic documentation deployment
 
 ### Fixed
 - Fix crash when creating playlist with missing selections when DISCORD_ADMIN_ID env var is not set. Now uses database approvers instead.
