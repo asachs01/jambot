@@ -1,6 +1,7 @@
 """Database management for Jambot using PostgreSQL."""
 import psycopg2
 import psycopg2.extras
+import json
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
@@ -106,12 +107,28 @@ class Database:
             updated_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())
         );
 
+        CREATE TABLE IF NOT EXISTS active_workflows (
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            summary_message_id BIGINT UNIQUE NOT NULL,
+            original_channel_id BIGINT,
+            original_message_id BIGINT,
+            song_matches JSONB NOT NULL,
+            selections JSONB DEFAULT '{}',
+            message_ids JSONB DEFAULT '[]',
+            approver_ids JSONB DEFAULT '[]',
+            setlist_data JSONB,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+
         CREATE INDEX IF NOT EXISTS idx_songs_guild_title ON songs(guild_id, song_title);
         CREATE INDEX IF NOT EXISTS idx_setlists_guild_date ON setlists(guild_id, date);
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_setlist_id ON setlist_songs(setlist_id);
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_song_id ON setlist_songs(song_id);
         CREATE INDEX IF NOT EXISTS idx_bot_configuration_guild_id ON bot_configuration(guild_id);
         CREATE INDEX IF NOT EXISTS idx_spotify_tokens_guild_id ON spotify_tokens(guild_id);
+        CREATE INDEX IF NOT EXISTS idx_active_workflows_summary_message ON active_workflows(summary_message_id);
         """
 
         # Migration for existing databases: add setlist pattern columns if they don't exist
@@ -125,6 +142,10 @@ class Database:
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                           WHERE table_name = 'bot_configuration' AND column_name = 'setlist_song_pattern') THEN
                 ALTER TABLE bot_configuration ADD COLUMN setlist_song_pattern TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'active_workflows' AND column_name = 'setlist_data') THEN
+                ALTER TABLE active_workflows ADD COLUMN setlist_data JSONB;
             END IF;
         END $$;
         """
@@ -542,3 +563,141 @@ class Database:
                 (guild_id,)
             )
             return cursor.fetchone() is not None
+
+    def save_workflow(self, workflow_data: Dict, summary_message_id: int) -> None:
+        """Save or update workflow to database.
+
+        Args:
+            workflow_data: Complete workflow dict from bot.active_workflows
+            summary_message_id: Discord message ID used as unique key
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO active_workflows (
+                    guild_id, summary_message_id, original_channel_id,
+                    original_message_id, song_matches, selections,
+                    message_ids, approver_ids, setlist_data, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (summary_message_id)
+                DO UPDATE SET
+                    selections = EXCLUDED.selections,
+                    setlist_data = EXCLUDED.setlist_data,
+                    updated_at = NOW()
+            """, (
+                workflow_data['guild_id'],
+                summary_message_id,
+                workflow_data.get('original_channel_id'),
+                workflow_data.get('setlist_data', {}).get('original_message_id'),
+                json.dumps(workflow_data['song_matches']),
+                json.dumps(workflow_data['selections']),
+                json.dumps(workflow_data['message_ids']),
+                json.dumps(workflow_data.get('approver_ids', [])),
+                json.dumps(workflow_data.get('setlist_data', {}))
+            ))
+
+    def get_workflow(self, summary_message_id: int) -> Optional[Dict]:
+        """Retrieve workflow by summary message ID.
+
+        Args:
+            summary_message_id: Discord message ID
+
+        Returns:
+            Workflow data dict or None if not found
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT guild_id, summary_message_id, original_channel_id,
+                       original_message_id, song_matches, selections,
+                       message_ids, approver_ids, setlist_data
+                FROM active_workflows
+                WHERE summary_message_id = %s
+            """, (summary_message_id,))
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return {
+                'guild_id': row[0],
+                'summary_message_id': row[1],
+                'original_channel_id': row[2],
+                'original_message_id': row[3],
+                'song_matches': row[4],  # Already parsed from JSONB
+                'selections': row[5],
+                'message_ids': row[6],
+                'approver_ids': row[7],
+                'setlist_data': row[8]
+            }
+
+    def get_all_active_workflows(self) -> List[Dict]:
+        """Retrieve all active workflows for startup restoration.
+
+        Returns:
+            List of workflow data dicts
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT guild_id, summary_message_id, original_channel_id,
+                       original_message_id, song_matches, selections,
+                       message_ids, approver_ids, setlist_data
+                FROM active_workflows
+                ORDER BY created_at ASC
+            """)
+
+            workflows = []
+            for row in cursor.fetchall():
+                workflows.append({
+                    'guild_id': row[0],
+                    'summary_message_id': row[1],
+                    'original_channel_id': row[2],
+                    'original_message_id': row[3],
+                    'song_matches': row[4],
+                    'selections': row[5],
+                    'message_ids': row[6],
+                    'approver_ids': row[7],
+                    'setlist_data': row[8]
+                })
+            return workflows
+
+    def update_workflow_selection(self, summary_message_id: int, song_number: int, track: Dict) -> None:
+        """Update single song selection in workflow.
+
+        Args:
+            summary_message_id: Workflow identifier
+            song_number: Song number (1-based)
+            track: Spotify track info dict
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Use jsonb_set to update nested key without full read-modify-write
+            cursor.execute("""
+                UPDATE active_workflows
+                SET selections = jsonb_set(
+                        selections,
+                        %s,
+                        %s,
+                        true
+                    ),
+                    updated_at = NOW()
+                WHERE summary_message_id = %s
+            """, (
+                [str(song_number)],  # JSONB path array
+                json.dumps(track),
+                summary_message_id
+            ))
+
+    def delete_workflow(self, summary_message_id: int) -> None:
+        """Delete workflow from database.
+
+        Args:
+            summary_message_id: Workflow identifier
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM active_workflows
+                WHERE summary_message_id = %s
+            """, (summary_message_id,))
