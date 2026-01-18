@@ -230,8 +230,9 @@ class SpotifyClient:
             else:
                 logger.info("Using cached access token")
 
-            # Create Spotify client
-            sp = spotipy.Spotify(auth_manager=auth_manager, requests_timeout=10)
+            # Create Spotify client using access token directly
+            # This avoids auth_manager trying to do interactive auth in headless environments
+            sp = spotipy.Spotify(auth=token_info['access_token'], requests_timeout=10)
             logger.info("Spotify authentication successful")
             return sp
 
