@@ -9,9 +9,9 @@ export default defineConfig({
       logo: {
         src: './src/assets/jambot_icon.png',
       },
-      social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/sachs7/jambot' },
-      ],
+      social: {
+        github: 'https://github.com/sachs7/jambot',
+      },
       customCss: [
         './src/styles/custom.css',
       ],
