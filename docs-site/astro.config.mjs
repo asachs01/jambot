@@ -10,7 +10,7 @@ export default defineConfig({
         src: './src/assets/jambot_icon.png',
       },
       social: {
-        github: 'https://github.com/sachs7/jambot',
+        github: 'https://github.com/asachs01/jambot',
       },
       customCss: [
         './src/styles/custom.css',
