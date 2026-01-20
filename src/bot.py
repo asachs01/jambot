@@ -36,9 +36,6 @@ class JamBot(commands.Bot):
         # Track active approval workflows
         self.active_workflows: Dict[int, Dict] = {}  # message_id -> workflow data
 
-        # Start background task for expired workflow cleanup
-        self.cleanup_expired_workflows.start()
-
         logger.info("JamBot initialized")
 
     def is_workflow_ready(self, workflow: Dict) -> Tuple[bool, List[str]]:
@@ -160,6 +157,9 @@ class JamBot(commands.Bot):
 
     async def setup_hook(self):
         """Called when the bot is setting up."""
+        # Start background task for expired workflow cleanup
+        self.cleanup_expired_workflows.start()
+
         # Register slash commands
         await self.commands_handler.setup()
 
