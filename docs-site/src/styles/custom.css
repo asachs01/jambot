@@ -62,8 +62,15 @@
 
 /* Sidebar active item */
 .sidebar-content a[aria-current='page'] {
-  background: rgba(200, 106, 42, 0.15);
+  background: rgba(200, 106, 42, 0.25);
   border-left-color: #C86A2A;
+  color: #3B2618 !important;
+  font-weight: 600;
+}
+
+:root[data-theme='dark'] .sidebar-content a[aria-current='page'] {
+  background: rgba(200, 106, 42, 0.35);
+  color: #FFD18A !important;
 }
 
 /* Logo styling */
