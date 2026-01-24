@@ -243,8 +243,12 @@ class JamBot(commands.Bot):
                 logger.info(f"Detected setlist message from jam leader (env var) in channel {message.channel.id}")
                 await self.handle_setlist_message(message)
 
-        # Handle @mention chord chart requests
-        if self.user and self.user.mentioned_in(message) and not message.mention_everyone:
+        # Handle @mention chord chart requests (user mention or "jambot" role mention)
+        bot_mentioned = self.user and self.user.mentioned_in(message) and not message.mention_everyone
+        jambot_role_mentioned = any(
+            'jambot' in role.name.lower() for role in message.role_mentions
+        )
+        if bot_mentioned or jambot_role_mentioned:
             await self.chart_commands.handle_mention(message)
 
         # Process commands
