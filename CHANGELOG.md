@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Chord chart generation feature with `/jambot-chart` slash command (create, view, list, transpose).
+- PDF chord charts in TNBGJ songbook format (landscape letter, lyrics left, chord grid right).
+- Chromatic transposition utility with bluegrass-appropriate sharp/flat spellings.
+- Mention-based chord chart requests (`@jambot chord chart for Mountain Dew in G`).
+- `chord_charts` PostgreSQL table for storing chord progressions per guild.
 - Persist approval workflows to database so they survive bot restarts.
 
 ### Fixed

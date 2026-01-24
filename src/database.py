@@ -127,9 +127,23 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_setlist_songs_song_id ON setlist_songs(song_id);
         CREATE INDEX IF NOT EXISTS idx_bot_configuration_guild_id ON bot_configuration(guild_id);
         CREATE INDEX IF NOT EXISTS idx_spotify_tokens_guild_id ON spotify_tokens(guild_id);
+        CREATE TABLE IF NOT EXISTS chord_charts (
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            title TEXT NOT NULL,
+            chart_title TEXT,
+            lyrics JSONB,
+            keys JSONB NOT NULL,
+            created_by BIGINT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(guild_id, title)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_approval_workflows_status ON approval_workflows(status);
         CREATE INDEX IF NOT EXISTS idx_approval_workflows_guild_user ON approval_workflows(guild_id, user_id);
         CREATE INDEX IF NOT EXISTS idx_approval_workflows_message_ids ON approval_workflows USING GIN (message_ids);
+        CREATE INDEX IF NOT EXISTS idx_chord_charts_guild_title ON chord_charts(guild_id, title);
         """
 
         # Migration for existing databases: add setlist pattern columns if they don't exist
@@ -750,6 +764,131 @@ class Database:
         """
         self.update_workflow(workflow_id, status='cancelled')
         logger.info(f"Marked workflow {workflow_id} as cancelled")
+
+    # ==================== Chord Chart Methods ====================
+
+    def create_chord_chart(
+        self,
+        guild_id: int,
+        title: str,
+        keys: List[Dict[str, Any]],
+        created_by: int,
+        chart_title: Optional[str] = None,
+        lyrics: Optional[List[Dict[str, Any]]] = None,
+    ) -> int:
+        """Create or update a chord chart.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            title: Song title.
+            keys: List of key entry dicts.
+            created_by: Discord user ID.
+            chart_title: Optional abbreviated title.
+            lyrics: Optional lyrics data.
+
+        Returns:
+            Chart database ID.
+        """
+        import json
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO chord_charts
+                   (guild_id, title, chart_title, lyrics, keys, created_by)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (guild_id, title) DO UPDATE SET
+                       chart_title = EXCLUDED.chart_title,
+                       lyrics = EXCLUDED.lyrics,
+                       keys = EXCLUDED.keys,
+                       updated_at = NOW()
+                   RETURNING id""",
+                (
+                    guild_id, title, chart_title,
+                    json.dumps(lyrics) if lyrics else None,
+                    json.dumps(keys),
+                    created_by,
+                )
+            )
+            chart_id = cursor.fetchone()[0]
+            logger.info(f"Created/updated chord chart '{title}' for guild {guild_id}")
+            return chart_id
+
+    def get_chord_chart(self, guild_id: int, title: str) -> Optional[Dict[str, Any]]:
+        """Get a chord chart by exact title.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            title: Exact song title.
+
+        Returns:
+            Chart dict if found, None otherwise.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM chord_charts WHERE guild_id = %s AND title = %s",
+                (guild_id, title)
+            )
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def search_chord_charts(self, guild_id: int, query: str) -> List[Dict[str, Any]]:
+        """Search chord charts by title (case-insensitive, substring match).
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            query: Search string.
+
+        Returns:
+            List of matching chart dicts.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM chord_charts WHERE guild_id = %s AND title ILIKE %s ORDER BY title",
+                (guild_id, f"%{query}%")
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def list_chord_charts(self, guild_id: int) -> List[Dict[str, Any]]:
+        """List all chord charts for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            List of chart dicts.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM chord_charts WHERE guild_id = %s ORDER BY title",
+                (guild_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def update_chord_chart_keys(
+        self, guild_id: int, title: str, keys: List[Dict[str, Any]]
+    ):
+        """Update the keys array for a chord chart (e.g. after transposition).
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            title: Song title.
+            keys: Updated keys list.
+        """
+        import json
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE chord_charts SET keys = %s, updated_at = NOW() WHERE guild_id = %s AND title = %s",
+                (json.dumps(keys), guild_id, title)
+            )
+            logger.info(f"Updated keys for chart '{title}' in guild {guild_id}")
 
     def _parse_workflow_row(self, row: Dict) -> Dict[str, Any]:
         """Parse a workflow database row into a workflow dictionary.
