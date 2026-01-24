@@ -31,42 +31,49 @@ class CreateChartView(ui.View):
 class ChartCreateModal(ui.Modal, title="Create Chord Chart"):
     """Modal for inputting chord chart data."""
 
-    song_title = ui.TextInput(
-        label="Song Title",
-        placeholder="e.g. Mountain Dew",
-        max_length=100,
-        required=True,
-    )
-    key = ui.TextInput(
-        label="Key",
-        placeholder="e.g. G",
-        max_length=5,
-        required=True,
-    )
-    section_labels = ui.TextInput(
-        label="Section Labels (comma-separated)",
-        placeholder="e.g. Verse,Chorus or A Part,B Part",
-        max_length=200,
-        required=True,
-    )
-    chords = ui.TextInput(
-        label="Chords (sections separated by blank lines)",
-        style=discord.TextStyle.paragraph,
-        placeholder="G G C G | D D G G\n\nC C G G | D D G G",
-        required=True,
-    )
-    lyrics = ui.TextInput(
-        label="Lyrics (optional, sections separated by blank lines)",
-        style=discord.TextStyle.paragraph,
-        placeholder="Verse lyrics here...\n\nChorus lyrics here...",
-        required=False,
-    )
-
     def __init__(self, db, prefill_title: str = None):
         super().__init__()
         self.db = db
-        if prefill_title:
-            self.song_title.default = prefill_title
+
+        # Create TextInputs dynamically to support prefill
+        self.song_title = ui.TextInput(
+            label="Song Title",
+            placeholder="e.g. Mountain Dew",
+            max_length=100,
+            required=True,
+            default=prefill_title or "",
+        )
+        self.key = ui.TextInput(
+            label="Key",
+            placeholder="e.g. G",
+            max_length=5,
+            required=True,
+        )
+        self.section_labels = ui.TextInput(
+            label="Section Labels (comma-separated)",
+            placeholder="e.g. Verse,Chorus or A Part,B Part",
+            max_length=200,
+            required=True,
+        )
+        self.chords = ui.TextInput(
+            label="Chords (sections separated by blank lines)",
+            style=discord.TextStyle.paragraph,
+            placeholder="G G C G | D D G G\n\nC C G G | D D G G",
+            required=True,
+        )
+        self.lyrics = ui.TextInput(
+            label="Lyrics (optional, sections separated by blank lines)",
+            style=discord.TextStyle.paragraph,
+            placeholder="Verse lyrics here...\n\nChorus lyrics here...",
+            required=False,
+        )
+
+        # Add items to modal
+        self.add_item(self.song_title)
+        self.add_item(self.key)
+        self.add_item(self.section_labels)
+        self.add_item(self.chords)
+        self.add_item(self.lyrics)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
