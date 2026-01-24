@@ -14,6 +14,20 @@ from src.chart_generator import (
 )
 
 
+class CreateChartView(ui.View):
+    """View with a button to open the chord chart creation modal."""
+
+    def __init__(self, db, prefill_title: str = None):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.db = db
+        self.prefill_title = prefill_title
+
+    @ui.button(label="Create Chart", style=discord.ButtonStyle.primary, emoji="📝")
+    async def create_button(self, interaction: discord.Interaction, button: ui.Button):
+        modal = ChartCreateModal(self.db, prefill_title=self.prefill_title)
+        await interaction.response.send_modal(modal)
+
+
 class ChartCreateModal(ui.Modal, title="Create Chord Chart"):
     """Modal for inputting chord chart data."""
 
@@ -48,9 +62,11 @@ class ChartCreateModal(ui.Modal, title="Create Chord Chart"):
         required=False,
     )
 
-    def __init__(self, db):
+    def __init__(self, db, prefill_title: str = None):
         super().__init__()
         self.db = db
+        if prefill_title:
+            self.song_title.default = prefill_title
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
@@ -290,23 +306,52 @@ class ChartCommands:
         - "chords for <title>"
         - "chart for <title>"
         - "I need a chord chart for <title> in <key>"
+        - "create a chord chart for <title>"
+        - "add a chord chart for <title>"
         """
         content = message.content
-        # Strip the bot mention
-        content = re.sub(r'<@!?\d+>', '', content).strip()
+        # Strip user and role mentions
+        content = re.sub(r'<@[!&]?\d+>', '', content).strip()
 
-        # Try to extract song title and optional key
-        patterns = [
+        # Check for explicit create requests first
+        create_patterns = [
+            r'(?:create|add|make|new)\s+(?:a\s+)?(?:chord\s*chart|chords?|chart)\s+(?:for\s+)?(.+?)\s+in\s+([A-Ga-g][#b]?)\s*$',
+            r'(?:create|add|make|new)\s+(?:a\s+)?(?:chord\s*chart|chords?|chart)\s+(?:for\s+)?(.+?)\s*$',
+            r'(?:create|add|make|new)\s+(?:a\s+)?(?:chord\s*chart|chords?|chart)\s*$',
+        ]
+
+        is_create_request = False
+        song_title = None
+        requested_key = None
+
+        for pattern in create_patterns:
+            m = re.search(pattern, content, re.IGNORECASE)
+            if m:
+                is_create_request = True
+                if m.lastindex >= 1:
+                    song_title = m.group(1).strip().strip('"\'')
+                if m.lastindex >= 2:
+                    requested_key = m.group(2).strip()
+                break
+
+        if is_create_request:
+            logger.info(f"Chart create request via mention: title='{song_title}'")
+            view = CreateChartView(self.db, prefill_title=song_title)
+            await message.reply(
+                "Click below to create a new chord chart:",
+                view=view,
+            )
+            return
+
+        # Try to extract song title for lookup
+        lookup_patterns = [
             r'(?:chord\s*chart|chords?|chart)\s+for\s+(.+?)\s+in\s+([A-Ga-g][#b]?)\s*$',
             r'(?:chord\s*chart|chords?|chart)\s+for\s+(.+?)\s*$',
             r'(?:need|want|get)\s+(?:a\s+)?(?:chord\s*chart|chords?|chart)\s+for\s+(.+?)\s+in\s+([A-Ga-g][#b]?)\s*$',
             r'(?:need|want|get)\s+(?:a\s+)?(?:chord\s*chart|chords?|chart)\s+for\s+(.+?)\s*$',
         ]
 
-        song_title = None
-        requested_key = None
-
-        for pattern in patterns:
+        for pattern in lookup_patterns:
             m = re.search(pattern, content, re.IGNORECASE)
             if m:
                 song_title = m.group(1).strip().strip('"\'')
@@ -354,7 +399,9 @@ class ChartCommands:
                 file=file,
             )
         else:
+            view = CreateChartView(self.db, prefill_title=song_title)
             await message.reply(
                 f"I don't have a chord chart for \"{song_title}\" yet. "
-                f"Use `/jambot-chart create` to add one!"
+                f"Click below to create one:",
+                view=view,
             )
