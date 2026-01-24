@@ -13,6 +13,12 @@ psycopg2-binary==2.9.9
 # Logging
 # logging is built into Python
 
+# PDF Generation
+reportlab==4.1.0
+
+# Testing
+pytest==9.0.2
+
 # Web Server for Setup
 Flask==3.0.0
 gunicorn==21.2.0

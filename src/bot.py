@@ -9,6 +9,7 @@ from src.database import Database
 from src.spotify_client import SpotifyClient
 from src.setlist_parser import SetlistParser
 from src.commands import JambotCommands
+from src.chart_commands import ChartCommands
 
 
 class JamBot(commands.Bot):
@@ -32,6 +33,7 @@ class JamBot(commands.Bot):
         self._default_parser = SetlistParser()
         self._guild_parsers: Dict[int, SetlistParser] = {}  # Cache guild-specific parsers
         self.commands_handler = JambotCommands(self, self.db)
+        self.chart_commands = ChartCommands(self, self.db)
 
         # Track active approval workflows
         self.active_workflows: Dict[int, Dict] = {}  # message_id -> workflow data
@@ -162,6 +164,7 @@ class JamBot(commands.Bot):
 
         # Register slash commands
         await self.commands_handler.setup()
+        await self.chart_commands.setup()
 
         # Sync commands with Discord
         try:
@@ -239,6 +242,10 @@ class JamBot(commands.Bot):
             if parser.is_setlist_message(message.content):
                 logger.info(f"Detected setlist message from jam leader (env var) in channel {message.channel.id}")
                 await self.handle_setlist_message(message)
+
+        # Handle @mention chord chart requests
+        if self.user and self.user.mentioned_in(message) and not message.mention_everyone:
+            await self.chart_commands.handle_mention(message)
 
         # Process commands
         await self.process_commands(message)
