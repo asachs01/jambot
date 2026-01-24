@@ -5,17 +5,14 @@ Generates landscape letter PDFs matching the TNBGJ songbook format:
 - Right panel: chord grid (column-major reading order)
 """
 import io
-import json
 from typing import Dict, List, Optional, Any
 
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.units import inch
-from reportlab.lib.colors import black, white, HexColor
+from reportlab.lib.colors import black, HexColor
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-
-from src.logger import logger
 
 # --- Transposition Logic ---
 
@@ -145,8 +142,8 @@ def parse_chord_input(
             measure_chords = [c.strip() for c in measure.split() if c.strip()]
             chords.extend(measure_chords)
 
-        # Determine rows (how many beats per row for grid layout)
-        rows = max(1, (len(chords) + 7) // 8)  # 8 chords per row as default
+        # Standard grid is 8 rows tall; columns expand as needed
+        rows = 8 if len(chords) > 8 else max(1, len(chords))
 
         sections.append({
             'label': label,
@@ -177,14 +174,79 @@ def parse_chord_input(
 
 # --- PDF Generation ---
 
-# Grid cell dimensions
+import math
+import os
+
+# Grid cell dimensions (matches TNBGJ songbook format)
 CELL_W = 28
 CELL_H = 24
-GRID_PAD = 4
+SECTION_GAP = 8  # gap between sections (in points)
+
+# Font names (serif to match Georgia in the songbook)
+FONT_REGULAR = 'Times-Roman'
+FONT_BOLD = 'Times-Bold'
+FONT_ITALIC = 'Times-Italic'
+FONT_BOLD_ITALIC = 'Times-BoldItalic'
+
+# Try to register Georgia if available on the system
+_fonts_initialized = False
+
+
+def _init_fonts():
+    """Register Georgia fonts if available, otherwise use Times-Roman."""
+    global _fonts_initialized, FONT_REGULAR, FONT_BOLD, FONT_ITALIC, FONT_BOLD_ITALIC
+    if _fonts_initialized:
+        return
+    _fonts_initialized = True
+
+    georgia_paths = {
+        'Georgia': [
+            '/Library/Fonts/Georgia.ttf',
+            '/System/Library/Fonts/Supplemental/Georgia.ttf',
+            '/usr/share/fonts/truetype/msttcorefonts/Georgia.ttf',
+        ],
+        'Georgia-Bold': [
+            '/Library/Fonts/Georgia Bold.ttf',
+            '/System/Library/Fonts/Supplemental/Georgia Bold.ttf',
+            '/usr/share/fonts/truetype/msttcorefonts/Georgia_Bold.ttf',
+        ],
+        'Georgia-Italic': [
+            '/Library/Fonts/Georgia Italic.ttf',
+            '/System/Library/Fonts/Supplemental/Georgia Italic.ttf',
+            '/usr/share/fonts/truetype/msttcorefonts/Georgia_Italic.ttf',
+        ],
+        'Georgia-BoldItalic': [
+            '/Library/Fonts/Georgia Bold Italic.ttf',
+            '/System/Library/Fonts/Supplemental/Georgia Bold Italic.ttf',
+            '/usr/share/fonts/truetype/msttcorefonts/Georgia_Bold_Italic.ttf',
+        ],
+    }
+
+    registered = {}
+    for font_name, paths in georgia_paths.items():
+        for path in paths:
+            if os.path.exists(path):
+                try:
+                    pdfmetrics.registerFont(TTFont(font_name, path))
+                    registered[font_name] = True
+                    break
+                except Exception:
+                    pass
+
+    if 'Georgia' in registered:
+        FONT_REGULAR = 'Georgia'
+        FONT_BOLD = registered.get('Georgia-Bold') and 'Georgia-Bold' or 'Georgia'
+        FONT_ITALIC = registered.get('Georgia-Italic') and 'Georgia-Italic' or 'Georgia'
+        FONT_BOLD_ITALIC = registered.get('Georgia-BoldItalic') and 'Georgia-BoldItalic' or 'Georgia'
 
 
 def generate_chart_pdf(chart_data: Dict[str, Any]) -> io.BytesIO:
     """Generate a PDF chord chart matching the TNBGJ songbook format.
+
+    Landscape letter page with two panels:
+    - Left: title + lyrics (serif font)
+    - Right: chart title (bold italic) + "Key of X" + chord grid
+      (vertical lines only, column-major reading order)
 
     Args:
         chart_data: Dict with title, chart_title, keys, lyrics.
@@ -192,6 +254,8 @@ def generate_chart_pdf(chart_data: Dict[str, Any]) -> io.BytesIO:
     Returns:
         BytesIO buffer containing the PDF.
     """
+    _init_fonts()
+
     buf = io.BytesIO()
     page_w, page_h = landscape(letter)
     c = canvas.Canvas(buf, pagesize=landscape(letter))
@@ -200,8 +264,9 @@ def generate_chart_pdf(chart_data: Dict[str, Any]) -> io.BytesIO:
     usable_w = page_w - 2 * margin
     usable_h = page_h - 2 * margin
 
-    # Split page: left panel (lyrics), right panel (chord grid)
-    split_x = margin + usable_w * 0.4  # 40% lyrics, 60% chords
+    # Equal-width panels with gap (matches CSS flex: 1 + gap: 0.4in)
+    gap = 0.4 * inch
+    panel_w = (usable_w - gap) / 2
 
     title = chart_data.get('title', 'Untitled')
     chart_title = chart_data.get('chart_title', title)
@@ -209,12 +274,17 @@ def generate_chart_pdf(chart_data: Dict[str, Any]) -> io.BytesIO:
     lyrics = chart_data.get('lyrics')
 
     # --- Left Panel: Title + Lyrics ---
-    _draw_lyrics_panel(c, margin, margin, split_x - margin - 10, usable_h, title, lyrics)
+    _draw_lyrics_panel(c, margin, margin, panel_w, usable_h, title, lyrics)
+
+    # --- Panel Divider (subtle gray line) ---
+    divider_x = margin + panel_w + gap * 0.3
+    c.setStrokeColor(HexColor('#cccccc'))
+    c.setLineWidth(0.5)
+    c.line(divider_x, margin, divider_x, margin + usable_h)
 
     # --- Right Panel: Chord Grid ---
-    right_x = split_x + 10
-    right_w = page_w - margin - right_x
-    _draw_chord_panel(c, right_x, margin, right_w, usable_h, chart_title, keys)
+    chord_x = margin + panel_w + gap
+    _draw_chord_panel(c, chord_x, margin, panel_w, usable_h, chart_title, keys)
 
     c.save()
     buf.seek(0)
@@ -229,33 +299,35 @@ def _draw_lyrics_panel(
     """Draw the left panel with title and lyrics."""
     top = y + h
 
-    # Title
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(x, top - 20, title)
+    # Title (Georgia/Times Bold 18pt)
+    c.setFont(FONT_BOLD, 18)
+    c.drawString(x, top - 22, title)
 
     if not lyrics:
         return
 
     cursor_y = top - 50
-    line_height = 14
+    line_height = 15.4  # 11pt * 1.4 line-height
 
     for section in lyrics:
         if cursor_y < y + 30:
             break
-        # Section label
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(x, cursor_y, section.get('label', ''))
-        cursor_y -= line_height + 2
+        # Section label (bold italic)
+        label = section.get('label', '')
+        if label:
+            c.setFont(FONT_BOLD_ITALIC, 11)
+            c.drawString(x, cursor_y, label)
+            cursor_y -= line_height
 
-        # Lines
-        c.setFont("Helvetica", 10)
+        # Lyric lines
+        c.setFont(FONT_REGULAR, 11)
         for line in section.get('lines', []):
             if cursor_y < y + 10:
                 break
-            c.drawString(x + 10, cursor_y, line)
+            c.drawString(x, cursor_y, line)
             cursor_y -= line_height
 
-        cursor_y -= 8  # Gap between sections
+        cursor_y -= 10  # Gap between lyric sections
 
 
 def _draw_chord_panel(
@@ -263,62 +335,152 @@ def _draw_chord_panel(
     x: float, y: float, w: float, h: float,
     chart_title: str, keys: List[Dict]
 ):
-    """Draw the right panel with chart title and chord grids."""
+    """Draw the right panel with chart title and chord grids.
+
+    Layout matches the TNBGJ songbook:
+    - Chart title centered, bold italic 22pt
+    - Key groups placed side by side (multi-key songs)
+    - Within each key group: "Key of X" centered, sections side by side
+    - Grid uses only vertical lines between columns
+    - Column-major reading order (top-to-bottom, left-to-right)
+    """
     top = y + h
+    KEY_GROUP_GAP = 14  # gap between key groups (0.1in ~ 7pt, using 14 for clarity)
 
-    # Chart title (italic)
-    c.setFont("Helvetica-Oblique", 20)
-    c.drawString(x, top - 24, chart_title)
+    # Chart title (bold italic, 22pt, centered)
+    c.setFont(FONT_BOLD_ITALIC, 22)
+    title_w = c.stringWidth(chart_title, FONT_BOLD_ITALIC, 22)
+    c.drawString(x + (w - title_w) / 2, top - 26, chart_title)
 
-    cursor_y = top - 50
-
+    # Pre-calculate key group widths for horizontal layout
+    key_group_infos = []
     for key_entry in keys:
-        if cursor_y < y + 50:
-            break
+        sections = key_entry.get('sections', [])
+        section_infos = []
+        for section in sections:
+            rows = section.get('rows', 8)
+            chords = section.get('chords', [])
+            cols = max(1, math.ceil(len(chords) / rows))
+            section_infos.append({
+                'section': section,
+                'rows': rows,
+                'cols': cols,
+                'width': cols * CELL_W,
+            })
+        group_width = sum(s['width'] for s in section_infos) + \
+            max(0, len(section_infos) - 1) * SECTION_GAP
+        # Ensure group is wide enough for the "Key of X" label
+        c.setFont(FONT_BOLD, 14)
+        key_label_w = c.stringWidth(f"Key of {key_entry['key']}", FONT_BOLD, 14)
+        group_width = max(group_width, key_label_w)
+        key_group_infos.append({
+            'key_entry': key_entry,
+            'section_infos': section_infos,
+            'width': group_width,
+        })
 
-        # "Key of X"
-        c.setFont("Helvetica-Bold", 13)
-        c.drawString(x, cursor_y, f"Key of {key_entry['key']}")
-        cursor_y -= 20
+    if not key_group_infos:
+        return
 
-        for section in key_entry.get('sections', []):
-            if cursor_y < y + 30:
-                break
+    # Total width of all key groups side by side
+    total_groups_width = sum(g['width'] for g in key_group_infos) + \
+        max(0, len(key_group_infos) - 1) * KEY_GROUP_GAP
 
+    # Center all key groups horizontally
+    groups_start_x = x + (w - total_groups_width) / 2
+    body_top = top - 44  # below chart title
+
+    group_x = groups_start_x
+    for group_info in key_group_infos:
+        key_entry = group_info['key_entry']
+        section_infos = group_info['section_infos']
+        group_w = group_info['width']
+
+        # "Key of X" (bold 14pt, centered within this group)
+        c.setFont(FONT_BOLD, 14)
+        key_text = f"Key of {key_entry['key']}"
+        key_w = c.stringWidth(key_text, FONT_BOLD, 14)
+        c.drawString(group_x + (group_w - key_w) / 2, body_top, key_text)
+
+        # Sections start below the key label
+        sections_top = body_top - 22
+
+        # Center sections within this key group
+        sections_width = sum(s['width'] for s in section_infos) + \
+            max(0, len(section_infos) - 1) * SECTION_GAP
+        section_x = group_x + (group_w - sections_width) / 2
+
+        for info in section_infos:
+            section = info['section']
+            rows = info['rows']
+            cols = info['cols']
             chords = section.get('chords', [])
             label = section.get('label', '')
-            cols = 8  # chords per row
-            rows = max(1, (len(chords) + cols - 1) // cols)
+            endings = section.get('endings')
 
-            # Section label
-            c.setFont("Helvetica-Bold", 9)
-            c.drawString(x, cursor_y, label)
-            cursor_y -= 4
+            # Section label (centered above section)
+            label_y = sections_top
+            if label:
+                c.setFont(FONT_BOLD, 9)
+                c.setFillColor(black)
+                label_w = c.stringWidth(label, FONT_BOLD, 9)
+                c.drawString(section_x + (info['width'] - label_w) / 2, label_y, label)
 
-            # Draw grid (column-major reading order for the TNBGJ format)
-            grid_top = cursor_y
-            for row in range(rows):
-                for col in range(cols):
-                    # Column-major index: read top to bottom, then next column
+            # Ending markers below label, above grid columns
+            if endings:
+                marker_row_y = label_y - 14
+                _draw_ending_markers(c, section_x, marker_row_y, endings)
+
+            # Grid starts below header area
+            header_space = 16 + (14 if endings else 0)
+            grid_top = label_y - header_space
+
+            # Draw vertical lines only (no horizontal lines)
+            c.setStrokeColor(black)
+            c.setLineWidth(0.75)
+            grid_bottom = grid_top - rows * CELL_H
+            for col in range(cols + 1):
+                line_x = section_x + col * CELL_W
+                c.line(line_x, grid_top, line_x, grid_bottom)
+
+            # Draw chord text (column-major order)
+            c.setFont(FONT_BOLD, 11)
+            c.setFillColor(black)
+            for col in range(cols):
+                for row in range(rows):
                     idx = col * rows + row
-                    cell_x = x + col * CELL_W
-                    cell_y = grid_top - (row + 1) * CELL_H
-
-                    # Draw cell border
-                    c.setStrokeColor(black)
-                    c.setLineWidth(0.5)
-                    c.rect(cell_x, cell_y, CELL_W, CELL_H)
-
-                    # Draw chord text
                     if idx < len(chords):
                         chord = chords[idx]
-                        c.setFont("Helvetica", 9)
-                        c.drawCentredString(
-                            cell_x + CELL_W / 2,
-                            cell_y + CELL_H / 2 - 3,
-                            chord
-                        )
+                        cx = section_x + col * CELL_W + CELL_W / 2
+                        cy = grid_top - row * CELL_H - CELL_H / 2 - 3
+                        c.drawCentredString(cx, cy, chord)
 
-            cursor_y = grid_top - rows * CELL_H - 15
+            section_x += info['width'] + SECTION_GAP
 
-        cursor_y -= 10  # Gap between key groups
+        group_x += group_w + KEY_GROUP_GAP
+
+
+def _draw_ending_markers(
+    c: canvas.Canvas,
+    section_x: float, y: float,
+    endings: List[Dict]
+):
+    """Draw circled ending numbers above their respective columns."""
+    for ending_info in endings:
+        col = ending_info.get('column', 0)
+        ending_num = str(ending_info.get('ending', ''))
+
+        # Center the marker above the column
+        marker_x = section_x + col * CELL_W + CELL_W / 2
+
+        # Draw circle (radius 6pt)
+        c.setStrokeColor(black)
+        c.setFillColor(black)
+        c.setLineWidth(0.5)
+        c.circle(marker_x, y + 4, 6, stroke=1, fill=0)
+
+        # Draw number inside circle
+        c.setFont(FONT_BOLD, 7)
+        c.setFillColor(black)
+        num_w = c.stringWidth(ending_num, FONT_BOLD, 7)
+        c.drawString(marker_x - num_w / 2, y + 1.5, ending_num)
