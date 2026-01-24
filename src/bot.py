@@ -1,7 +1,7 @@
 """Main Discord bot implementation for Jambot."""
 import discord
-from discord.ext import commands
-from typing import Optional, List, Dict, Any
+from discord.ext import commands, tasks
+from typing import Optional, List, Dict, Any, Tuple
 import asyncio
 from src.config import Config
 from src.logger import logger
@@ -39,6 +39,77 @@ class JamBot(commands.Bot):
         self.active_workflows: Dict[int, Dict] = {}  # message_id -> workflow data
 
         logger.info("JamBot initialized")
+
+    def is_workflow_ready(self, workflow: Dict) -> Tuple[bool, List[str]]:
+        """Check if a workflow has all required selections.
+
+        Args:
+            workflow: Workflow data dictionary.
+
+        Returns:
+            Tuple of (is_ready, list_of_missing_song_titles).
+        """
+        song_matches = workflow.get('song_matches', [])
+        selections = workflow.get('selections', {})
+
+        missing_songs = []
+        for match in song_matches:
+            song_num = str(match['number'])
+            # Song needs selection if it has spotify results but no selection yet
+            if song_num not in selections and len(match.get('spotify_results', [])) > 0:
+                missing_songs.append(match.get('title', f"Song #{match['number']}"))
+
+        return len(missing_songs) == 0, missing_songs
+
+    @tasks.loop(hours=6)
+    async def cleanup_expired_workflows(self):
+        """Background task to clean up expired workflows."""
+        try:
+            expired = self.db.get_expired_workflows()
+            if not expired:
+                logger.info("No expired workflows to clean up")
+                return
+
+            logger.info(f"Found {len(expired)} expired workflows to clean up")
+
+            for workflow in expired:
+                try:
+                    # Update status to expired
+                    self.db.update_workflow_status(
+                        workflow['summary_message_id'],
+                        'expired'
+                    )
+
+                    # Notify initiator/approvers about expiration
+                    guild_id = workflow.get('guild_id')
+                    if guild_id:
+                        await self.notify_admin(
+                            f"⏰ **Workflow Expired**\n\n"
+                            f"Workflow #{workflow['id']} for setlist on "
+                            f"{workflow.get('setlist_data', {}).get('date', 'unknown date')} "
+                            f"has expired without completion.\n\n"
+                            f"Use `/jambot-process` to create a new workflow if needed.",
+                            guild_id=guild_id
+                        )
+
+                    # Cleanup from active workflows
+                    self.cleanup_workflow(workflow)
+
+                    logger.info(f"Cleaned up expired workflow {workflow['id']}")
+
+                except Exception as e:
+                    logger.error(
+                        f"Error cleaning up workflow {workflow.get('id')}: {e}",
+                        exc_info=True
+                    )
+
+        except Exception as e:
+            logger.error(f"Error in cleanup_expired_workflows task: {e}", exc_info=True)
+
+    @cleanup_expired_workflows.before_loop
+    async def before_cleanup_expired_workflows(self):
+        """Wait until bot is ready before starting cleanup task."""
+        await self.wait_until_ready()
 
     def get_parser_for_guild(self, guild_id: int) -> SetlistParser:
         """Get a parser configured with guild-specific patterns if available.
@@ -88,6 +159,9 @@ class JamBot(commands.Bot):
 
     async def setup_hook(self):
         """Called when the bot is setting up."""
+        # Start background task for expired workflow cleanup
+        self.cleanup_expired_workflows.start()
+
         # Register slash commands
         await self.commands_handler.setup()
         await self.chart_commands.setup()
@@ -103,15 +177,32 @@ class JamBot(commands.Bot):
 
     async def on_connect(self):
         """Called when the bot establishes a connection to Discord."""
+        from src.health_state import health_state
+        health_state.set_connected()
         logger.info("Successfully connected to Discord Gateway")
 
     async def on_ready(self):
         """Called when the bot successfully connects to Discord."""
         logger.info(f"Bot logged in as {self.user} (ID: {self.user.id})")
+
+        # Restore active workflows from database
+        try:
+            workflows = self.db.get_all_active_workflows()
+            for workflow in workflows:
+                summary_msg_id = workflow['summary_message_id']
+                # Populate active_workflows dict for all message IDs
+                for msg_id in workflow['message_ids'] + [summary_msg_id]:
+                    self.active_workflows[msg_id] = workflow
+            logger.info(f"Restored {len(workflows)} active workflows from database")
+        except Exception as e:
+            logger.error(f"Failed to restore workflows from database: {e}", exc_info=True)
+
         logger.info("Bot is ready. Use /jambot-setup to configure jam leaders and approvers in each server.")
 
     async def on_disconnect(self):
         """Called when the bot disconnects from Discord."""
+        from src.health_state import health_state
+        health_state.set_disconnected()
         logger.warning("Disconnected from Discord")
 
     async def on_error(self, event, *args, **kwargs):
@@ -152,7 +243,7 @@ class JamBot(commands.Bot):
                 logger.info(f"Detected setlist message from jam leader (env var) in channel {message.channel.id}")
                 await self.handle_setlist_message(message)
 
-        # Handle @mentions for chord chart requests
+        # Handle @mention chord chart requests
         if self.user and self.user.mentioned_in(message) and not message.mention_everyone:
             await self.chart_commands.handle_mention(message)
 
@@ -181,42 +272,22 @@ class JamBot(commands.Bot):
             logger.info(f"DM is a reply to message ID: {replied_msg_id}")
 
             # Find which workflow this message belongs to
-            # First check memory, then fall back to database
             workflow_id = None
-            workflow = None
             song_number = None
 
             logger.info(f"Searching through {len(self.active_workflows)} active workflows")
-            for wf_id, wf in self.active_workflows.items():
-                logger.info(f"  Workflow {wf_id} has {len(wf['message_ids'])} messages")
-                if replied_msg_id in wf['message_ids']:
+            for wf_id, workflow in self.active_workflows.items():
+                logger.info(f"  Workflow {wf_id} has {len(workflow['message_ids'])} messages")
+                if replied_msg_id in workflow['message_ids']:
                     workflow_id = wf_id
-                    workflow = wf
                     # Find which song this message corresponds to
-                    msg_index = wf['message_ids'].index(replied_msg_id)
-                    if msg_index < len(wf['song_matches']):
-                        song_number = wf['song_matches'][msg_index]['number']
+                    msg_index = workflow['message_ids'].index(replied_msg_id)
+                    if msg_index < len(workflow['song_matches']):
+                        song_number = workflow['song_matches'][msg_index]['number']
                     logger.info(f"Found workflow {wf_id} for song {song_number}")
                     break
 
-            # If not in memory, check database
-            if not workflow:
-                workflow = self.db.get_workflow_by_message_id(replied_msg_id)
-                if workflow:
-                    workflow_id = replied_msg_id  # Use message_id as key for memory cache
-                    # Re-populate in-memory cache
-                    for msg_id in workflow['message_ids']:
-                        self.active_workflows[msg_id] = workflow
-                    if workflow.get('summary_message_id'):
-                        self.active_workflows[workflow['summary_message_id']] = workflow
-                    # Find song number
-                    if replied_msg_id in workflow['message_ids']:
-                        msg_index = workflow['message_ids'].index(replied_msg_id)
-                        if msg_index < len(workflow['song_matches']):
-                            song_number = workflow['song_matches'][msg_index]['number']
-                    logger.info(f"Restored workflow {workflow['id']} from database for song {song_number}")
-
-            if not workflow or song_number is None:
+            if not workflow_id or song_number is None:
                 logger.info(f"DM reply not associated with any active workflow")
                 logger.info(f"  Replied message ID: {replied_msg_id}")
                 logger.info(f"  Active workflow IDs: {list(self.active_workflows.keys())}")
@@ -240,6 +311,7 @@ class JamBot(commands.Bot):
             logger.info(f"User provided manual Spotify URL for song {song_number}: {spotify_url}")
 
             # Get guild_id from workflow
+            workflow = self.active_workflows[workflow_id]
             guild_id = workflow.get('guild_id', 0)
 
             # Create Spotify client for this guild
@@ -253,12 +325,40 @@ class JamBot(commands.Bot):
                 )
                 return
 
-            # Update workflow selection
-            workflow['selections'][song_number] = track_info
+            # Persist song to database immediately
+            workflow = self.active_workflows[workflow_id]
+            song_title = None
+            for match in workflow["song_matches"]:
+                if match["number"] == song_number:
+                    song_title = match.get("title") or match.get("name")
+                    break
+            
+            try:
+                self.db.add_or_update_song(
+                    guild_id=guild_id,
+                    song_title=song_title,
+                    spotify_track_id=track_info["id"],
+                    spotify_track_name=track_info["name"],
+                    artist=track_info["artist"],
+                    album=track_info["album"],
+                    spotify_url=track_info["url"]
+                )
+                logger.info(f"Stored manual song submission for '{track_info['name']}' via DM reply")
+            except Exception as db_error:
+                logger.error(f"Failed to persist manual song submission to database: {db_error}", exc_info=True)
+                # Continue to send confirmation message even if database storage fails
+            
+            # Update workflow selection (use string key for JSONB compatibility)
+            workflow["selections"][str(song_number)] = track_info
 
-            # Persist selection to database
-            if workflow.get('id'):
-                self.db.update_workflow(workflow['id'], selections=workflow['selections'])
+            # Persist to database
+            try:
+                summary_msg_id = workflow.get('summary_message_id')
+                if summary_msg_id:
+                    self.db.update_workflow_selection(summary_msg_id, song_number, track_info)
+                    logger.info(f"Persisted manual selection for song {song_number} to database")
+            except Exception as e:
+                logger.error(f"Failed to persist manual selection to database: {e}", exc_info=True)
 
             logger.info(
                 f"Updated song {song_number} with manual selection: "
@@ -517,24 +617,19 @@ class JamBot(commands.Bot):
 
         workflow_data['summary_message_id'] = summary_msg.id
 
-        # Persist workflow to database
-        workflow_id = self.db.create_workflow(
-            guild_id=guild_id,
-            user_id=user_id,
-            setlist_data=setlist_data,
-            song_matches=song_matches,
-            original_channel_id=original_channel_id,
-            selections=workflow_data['selections'],
-            message_ids=workflow_data['message_ids'],
-            summary_message_id=summary_msg.id
-        )
-        workflow_data['id'] = workflow_id
-
-        # Also keep in memory for faster access during active session
+        # Store workflow data
         for msg_id in workflow_data['message_ids'] + [summary_msg.id]:
             self.active_workflows[msg_id] = workflow_data
 
-        logger.info(f"Sent approval workflow to user {user_id} for {len(song_matches)} songs (workflow_id={workflow_id})")
+        # Persist to database
+        try:
+            self.db.save_workflow(workflow_data, summary_msg.id)
+            logger.info(f"Persisted workflow {summary_msg.id} to database")
+        except Exception as e:
+            logger.error(f"Failed to persist workflow to database: {e}", exc_info=True)
+            # Continue - in-memory workflow still functional
+
+        logger.info(f"Sent approval workflow to user {user_id} for {len(song_matches)} songs")
 
     async def create_song_approval_embed(self, match: Dict) -> discord.Embed:
         """Create an embed for song approval.
@@ -605,10 +700,9 @@ class JamBot(commands.Bot):
         return embed
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        """Handle reaction additions for approval workflow.
+        """Handle reaction additions for approval workflow and satisfaction ratings.
 
         Uses raw reaction event for reliability - doesn't require message to be cached.
-        Looks up workflow from memory first, then falls back to database for persistence.
 
         Args:
             payload: Raw reaction event payload.
@@ -617,26 +711,34 @@ class JamBot(commands.Bot):
         if payload.user_id == self.user.id:
             return
 
+        # Check for satisfaction reaction on playlist messages
+        emoji_str = str(payload.emoji)
+        satisfaction_messages = getattr(self, '_satisfaction_messages', {})
+        if payload.message_id in satisfaction_messages:
+            if emoji_str in ["👍", "👎"]:
+                msg_data = satisfaction_messages[payload.message_id]
+                # Prevent duplicate votes from same user
+                if payload.user_id not in msg_data['voters']:
+                    msg_data['voters'].add(payload.user_id)
+                    rating = 1 if emoji_str == "👍" else -1
+                    self.db.save_satisfaction_rating(
+                        msg_data['guild_id'],
+                        msg_data['playlist_id'],
+                        rating
+                    )
+                    logger.info(
+                        f"Recorded satisfaction rating {rating} for playlist "
+                        f"{msg_data['playlist_id']} from user {payload.user_id}"
+                    )
+            return
+
         # Check if reaction is on an active workflow message
-        # First check memory, then fall back to database
-        workflow = self.active_workflows.get(payload.message_id)
-
-        if not workflow:
-            # Try to find in database (for workflows that survived a restart)
-            workflow = self.db.get_workflow_by_message_id(payload.message_id)
-            if workflow:
-                # Re-populate in-memory cache for faster subsequent access
-                for msg_id in workflow['message_ids']:
-                    self.active_workflows[msg_id] = workflow
-                if workflow.get('summary_message_id'):
-                    self.active_workflows[workflow['summary_message_id']] = workflow
-                logger.info(f"Restored workflow {workflow['id']} from database")
-
-        if not workflow:
+        if payload.message_id not in self.active_workflows:
             return
 
         logger.info(f"Received reaction {payload.emoji} on workflow message {payload.message_id}")
 
+        workflow = self.active_workflows[payload.message_id]
         emoji_str = str(payload.emoji)
 
         # Check if this is the summary message
@@ -651,7 +753,8 @@ class JamBot(commands.Bot):
                     await dm_channel.send("❌ Playlist creation cancelled.")
                 except Exception as e:
                     logger.error(f"Failed to send cancellation message: {e}")
-                self.cleanup_workflow(workflow, status='cancelled')
+                logger.info(f"Cleaning up workflow {workflow.get('summary_message_id')} after cancellation")
+                self.cleanup_workflow(workflow)
             return
 
         # Handle song selection reactions
@@ -668,12 +771,38 @@ class JamBot(commands.Bot):
             # Multiple choice selection
             idx = self.SELECT_EMOJIS.index(emoji_str)
             if idx < len(match['spotify_results']):
-                workflow['selections'][match['number']] = match['spotify_results'][idx]
+                track_info = match['spotify_results'][idx]
+                
+                # Persist song to database immediately
+                guild_id = workflow.get('guild_id', 0)
+                song_title = match.get('name') or match.get('title')
+                
+                try:
+                    self.db.add_or_update_song(
+                        guild_id=guild_id,
+                        song_title=song_title,
+                        spotify_track_id=track_info["id"],
+                        spotify_track_name=track_info["name"],
+                        artist=track_info["artist"],
+                        album=track_info["album"],
+                        spotify_url=track_info["url"]
+                    )
+                    logger.info(f"Stored emoji reaction song selection for '{track_info['name']}' via reaction")
+                except Exception as db_error:
+                    logger.error(f"Failed to persist emoji reaction selection to database: {db_error}", exc_info=True)
+                    # Continue to send confirmation message even if database storage fails
+                
+                workflow['selections'][str(match['number'])] = track_info
                 logger.info(f"Admin selected option {idx + 1} for song {match['number']}")
 
                 # Persist selection to database
-                if workflow.get('id'):
-                    self.db.update_workflow(workflow['id'], selections=workflow['selections'])
+                try:
+                    summary_msg_id = workflow.get('summary_message_id')
+                    if summary_msg_id:
+                        self.db.update_workflow_selection(summary_msg_id, match['number'], track_info)
+                        logger.info(f"Persisted selection for song {match['number']} to database")
+                except Exception as e:
+                    logger.error(f"Failed to persist selection to database: {e}", exc_info=True)
 
                 # Send confirmation via DM
                 try:
@@ -694,14 +823,16 @@ class JamBot(commands.Bot):
             selections = workflow['selections']
 
             # Verify all songs have selections (except rejected ones)
+            # Use string keys for comparison since JSONB always uses string keys
             missing_songs = []
             for match in workflow['song_matches']:
-                if match['number'] not in selections and len(match['spotify_results']) > 0:
+                if str(match['number']) not in selections and len(match['spotify_results']) > 0:
                     missing_songs.append(match['title'])
 
             if missing_songs:
                 # Get approvers from database using guild_id from workflow
                 guild_id = workflow.get('guild_id')
+                workflow_id = workflow.get('id', 'unknown')
                 approver_ids = self.db.get_approver_ids(guild_id) if guild_id else []
 
                 # Fall back to env var if no approvers configured
@@ -709,10 +840,14 @@ class JamBot(commands.Bot):
                     approver_ids = [int(Config.DISCORD_ADMIN_ID)]
 
                 error_message = (
-                    f"⚠️ **Cannot create playlist** - Missing selections for:\n" +
+                    f"⚠️ **Cannot create playlist** (Workflow #{workflow_id})\n\n"
+                    f"**Missing selections for:**\n" +
                     "\n".join(f"- {song}" for song in missing_songs) +
-                    "\n\n**To fix:** Select the missing songs above using the number reactions (1️⃣, 2️⃣, 3️⃣), "
-                    "then remove your ✅ reaction from the summary message and add it again."
+                    "\n\n**How to fix:**\n"
+                    "1. Select the missing songs using reactions (1️⃣, 2️⃣, 3️⃣) or reply with a Spotify URL\n"
+                    f"2. Run `/jambot-retry {workflow_id}` to create the playlist\n\n"
+                    f"Or use `/jambot-workflow-status` to check your workflows, "
+                    f"or `/jambot-cancel-workflow {workflow_id}` to cancel."
                 )
 
                 if approver_ids:
@@ -722,6 +857,10 @@ class JamBot(commands.Bot):
                     await dm_channel.send(error_message)
                 else:
                     logger.error(f"Cannot notify about missing songs - no approvers configured: {missing_songs}")
+                logger.info(
+                    f"Workflow {workflow.get('summary_message_id')} remains active (not cleaned up) "
+                    f"so user can correct missing song selections and re-add ✅ reaction to retry playlist creation"
+                )
                 return
 
             # Get guild configuration for playlist name and channel
@@ -755,14 +894,15 @@ class JamBot(commands.Bot):
             )
 
             # Prepare track URIs and update database
+            # Sort by numeric value since keys are strings from JSONB
             track_uris = []
-            for song_num in sorted(selections.keys()):
+            for song_num in sorted(selections.keys(), key=int):
                 track = selections[song_num]
 
-                # Find original song title from matches
+                # Find original song title from matches (compare with int since match['number'] is int)
                 song_title = next(
                     m['title'] for m in workflow['song_matches']
-                    if m['number'] == song_num
+                    if m['number'] == int(song_num)
                 )
 
                 # Add/update song in database
@@ -777,7 +917,7 @@ class JamBot(commands.Bot):
                 )
 
                 # Link song to setlist
-                self.db.add_setlist_song(setlist_id, song_id, position=song_num)
+                self.db.add_setlist_song(setlist_id, song_id, position=int(song_num))
 
                 # Add to playlist
                 track_uris.append(track['uri'])
@@ -802,15 +942,34 @@ class JamBot(commands.Bot):
                 playlist_info['url']
             )
 
-            # Post to target channel
+            # Track usage analytics
+            self.db.track_usage_event(
+                guild_id or 0,
+                'playlist_created',
+                {'song_count': len(track_uris)}
+            )
+
+            # Post to target channel with satisfaction reactions
             target_channel = self.get_channel(target_channel_id)
             if target_channel:
-                await target_channel.send(
+                playlist_msg = await target_channel.send(
                     f"🎵 **Playlist created!**\n"
                     f"**{playlist_name}**\n"
                     f"{playlist_info['url']}\n"
-                    f"({len(track_uris)} songs)"
+                    f"({len(track_uris)} songs)\n\n"
+                    f"_React with 👍 or 👎 to rate this playlist!_"
                 )
+                # Add satisfaction reaction options
+                await playlist_msg.add_reaction("👍")
+                await playlist_msg.add_reaction("👎")
+
+                # Store message ID for tracking reactions
+                self._satisfaction_messages = getattr(self, '_satisfaction_messages', {})
+                self._satisfaction_messages[playlist_msg.id] = {
+                    'guild_id': guild_id,
+                    'playlist_id': playlist_info['id'],
+                    'voters': set()  # Track who has voted to prevent duplicates
+                }
 
             # Notify approvers
             await self.notify_admin(
@@ -821,6 +980,8 @@ class JamBot(commands.Bot):
             )
 
             logger.info(f"Successfully created playlist: {playlist_name}")
+            logger.info(f"Cleaning up workflow {workflow.get('summary_message_id')} after successful creation")
+            self.cleanup_workflow(workflow)
 
         except Exception as e:
             logger.error(f"Error creating playlist: {e}", exc_info=True)
@@ -828,30 +989,30 @@ class JamBot(commands.Bot):
             channel = self.get_channel(workflow.get('original_channel_id')) if workflow else None
             guild_id = channel.guild.id if channel and hasattr(channel, 'guild') else None
             await self.notify_admin(f"❌ Failed to create playlist: {e}", guild_id=guild_id)
-        finally:
-            # Always cleanup workflow to prevent memory leaks
+            logger.info(f"Cleaning up workflow {workflow.get('summary_message_id')} after error")
             self.cleanup_workflow(workflow)
 
-    def cleanup_workflow(self, workflow: Dict, status: str = 'completed'):
+    def cleanup_workflow(self, workflow: Dict):
         """Clean up a completed or cancelled workflow.
 
         Args:
             workflow: Workflow data dictionary.
-            status: Final status ('completed' or 'cancelled').
         """
-        # Mark workflow as completed/cancelled in database
-        if workflow.get('id'):
-            if status == 'cancelled':
-                self.db.mark_workflow_cancelled(workflow['id'])
-            else:
-                self.db.mark_workflow_completed(workflow['id'])
-
-        # Remove from active workflows in memory
+        # Remove from active workflows
         for msg_id in workflow['message_ids'] + [workflow.get('summary_message_id')]:
             if msg_id in self.active_workflows:
                 del self.active_workflows[msg_id]
 
-        logger.info(f"Cleaned up workflow (status={status})")
+        # Delete from database
+        try:
+            summary_msg_id = workflow.get('summary_message_id')
+            if summary_msg_id:
+                self.db.delete_workflow(summary_msg_id)
+                logger.info(f"Deleted workflow {summary_msg_id} from database")
+        except Exception as e:
+            logger.error(f"Failed to delete workflow from database: {e}", exc_info=True)
+
+        logger.info("Cleaned up workflow")
 
     async def notify_admin(self, message: str, guild_id: int = None):
         """Send a notification message to all configured approvers.
@@ -891,3 +1052,63 @@ class JamBot(commands.Bot):
 
         except Exception as e:
             logger.error(f"Failed to notify approvers: {e}")
+
+    async def notify_feedback(
+        self,
+        feedback_id: int,
+        guild_id: int,
+        user: discord.User,
+        feedback_type: str,
+        message: str,
+        context: Optional[str] = None
+    ):
+        """Send feedback notification to the configured maintainer.
+
+        Args:
+            feedback_id: Database ID of the feedback.
+            guild_id: Guild where feedback was submitted.
+            user: User who submitted feedback.
+            feedback_type: Type of feedback (bug, feature, general).
+            message: Feedback message content.
+            context: Optional additional context.
+        """
+        try:
+            # Get maintainer user ID from config
+            maintainer_id = Config.FEEDBACK_NOTIFY_USER_ID
+            if not maintainer_id:
+                logger.info("No FEEDBACK_NOTIFY_USER_ID configured - skipping notification")
+                return
+
+            maintainer = await self.fetch_user(int(maintainer_id))
+            if not maintainer:
+                logger.warning(f"Could not find maintainer user {maintainer_id}")
+                return
+
+            # Get guild name for context
+            guild = self.get_guild(guild_id)
+            guild_name = guild.name if guild else f"Guild {guild_id}"
+
+            # Build notification message
+            type_emoji = {"bug": "🐛", "feature": "💡", "general": "💬"}.get(feedback_type, "📝")
+            notification = (
+                f"{type_emoji} **New Feedback** (#{feedback_id})\n\n"
+                f"**Type:** {feedback_type.capitalize()}\n"
+                f"**From:** {user.name} (`{user.id}`)\n"
+                f"**Server:** {guild_name}\n\n"
+                f"**Message:**\n{message}"
+            )
+
+            if context:
+                notification += f"\n\n**Context:**\n{context}"
+
+            # Send DM to maintainer
+            dm_channel = await maintainer.create_dm()
+            await dm_channel.send(notification)
+
+            # Mark as notified in database
+            self.db.mark_feedback_notified(feedback_id)
+
+            logger.info(f"Sent feedback notification #{feedback_id} to maintainer {maintainer_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to send feedback notification: {e}", exc_info=True)

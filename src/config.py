@@ -54,6 +54,10 @@ class Config:
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE = os.getenv('LOG_FILE', '/app/logs/jambot.log')
 
+    # Feedback Configuration
+    # Discord user ID to receive feedback notifications via DM
+    FEEDBACK_NOTIFY_USER_ID = os.getenv('FEEDBACK_NOTIFY_USER_ID')
+
     @classmethod
     def validate(cls):
         """Validate that all required configuration is present.

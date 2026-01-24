@@ -1,0 +1,88 @@
+---
+title: Quick Start
+description: Get JamBot up and running in minutes
+---
+
+Get JamBot running in your Discord server with these simple steps.
+
+## Prerequisites
+
+- Python 3.11+
+- Discord Bot Token ([Setup Guide](/setup/discord/))
+- Spotify API Credentials ([Setup Guide](/setup/spotify/))
+- Docker (optional, for containerized deployment)
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/asachs01/jambot
+cd jambot
+```
+
+### 2. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure Environment
+
+```bash
+cp .env.example .env
+# Edit .env with your Discord and Spotify credentials
+```
+
+### 4. Run the Bot
+
+```bash
+python -m src.main
+```
+
+## Configuration via Discord
+
+Once your bot is running, configure everything directly in Discord:
+
+1. **Get User IDs**: Use `/jambot-getid @username` to get Discord user IDs
+2. **Configure Essential Settings**: Run `/jambot-setup` (admin only) to configure:
+   - Jam leader user IDs (comma-separated)
+   - Song approver user IDs (comma-separated)
+   - Spotify Client ID
+   - Spotify Client Secret
+3. **Authorize Spotify**: Run `/jambot-spotify-setup` to connect your Spotify account
+4. **Configure Advanced Settings** (Optional): Run `/jambot-settings` to set playlist channel and name template
+
+## Demo
+
+See JamBot in action:
+
+[![JamBot Demo](https://img.youtube.com/vi/y_6O6gqDYGM/maxresdefault.jpg)](https://www.youtube.com/watch?v=y_6O6gqDYGM)
+
+## Docker Deployment
+
+For containerized deployment:
+
+```bash
+docker-compose up -d
+```
+
+View logs:
+
+```bash
+docker-compose logs -f jambot
+```
+
+## Cloud Deployment
+
+Deploy to DigitalOcean App Platform with one click:
+
+[![Deploy to DO](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/asachs01/jambot/tree/main)
+
+See the [Deployment Guide](/guides/deployment/) for detailed instructions.
+
+## Next Steps
+
+- [Configure Discord Bot](/setup/discord/)
+- [Set up Spotify Integration](/setup/spotify/)
+- [Learn about the Admin Workflow](/guides/admin-guide/)

@@ -137,8 +137,28 @@ def index():
 
 @app.route('/health')
 def health():
-    """Health check endpoint for App Platform."""
-    return {'status': 'healthy', 'service': 'jambot'}, 200
+    """Health check endpoint for App Platform.
+
+    Returns unhealthy (503) if Discord is disconnected (after startup grace period),
+    which triggers App Platform to restart the container.
+    """
+    from src.health_state import health_state
+
+    status = health_state.get_status()
+
+    if not health_state.is_healthy():
+        return {
+            'status': 'unhealthy',
+            'service': 'jambot',
+            'reason': 'Discord disconnected',
+            **status
+        }, 503
+
+    return {
+        'status': 'healthy',
+        'service': 'jambot',
+        **status
+    }, 200
 
 @app.route('/auth')
 def auth():
