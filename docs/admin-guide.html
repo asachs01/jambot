@@ -350,6 +350,7 @@
             <ul>
                 <li><a href="setup.html">Setup Guide</a></li>
                 <li><a href="configuration.html">Configuration</a></li>
+                <li><a href="ai-chord-charts.html">AI Chord Charts</a></li>
                 <li><a href="deployment.html">Deployment</a></li>
                 <li><a href="admin-guide.html" class="active">Admin Guide</a></li>
                 <li><a href="troubleshooting.html">Troubleshooting</a></li>
@@ -621,10 +622,154 @@ If you want to sing any of these, please let me know or comment below.
                 <li>Most songs will use stored versions after the first jam</li>
             </ul>
 
+            <h2 id="premium-management">Premium Management Guide</h2>
+            <p>JamBot Premium enables AI-powered chord chart generation. This section covers how administrators manage premium features for their server.</p>
+
+            <div class="alert alert-info">
+                <strong>What's included:</strong> AI-generated chord charts with accurate chords, sections, and formatting. New servers receive <strong>5 free trial generations</strong>.
+            </div>
+
+            <h3><span class="step-badge">1</span>Setting Up Premium</h3>
+            <p>Administrators enable premium using the <code>/jambot-premium-setup</code> command:</p>
+
+            <pre><code>/jambot-premium-setup</code></pre>
+
+            <p>This opens a modal where you enter your Premium API token:</p>
+
+            <div class="example-box">
+                <strong>Premium Setup Modal</strong><br><br>
+                <strong>API Token:</strong> [Enter your token from premium.jambot.io]<br><br>
+                <em>Your token is securely hashed and stored. It will not be displayed again.</em>
+            </div>
+
+            <p><strong>What happens:</strong></p>
+            <ol>
+                <li>The bot validates your token with the Premium API</li>
+                <li>If valid, premium is enabled for your server</li>
+                <li>Your current credit balance is displayed</li>
+                <li>The token hash is stored securely in the database</li>
+            </ol>
+
+            <div class="alert alert-warning">
+                <strong>⚠️ Admin Only:</strong> Only users with Administrator permissions can run <code>/jambot-premium-setup</code>.
+            </div>
+
+            <h3><span class="step-badge">2</span>Checking Credit Balance</h3>
+            <p>View your server's credit balance anytime:</p>
+
+            <pre><code>/jambot-credits</code></pre>
+
+            <div class="example-box">
+                <strong>Credit Balance</strong><br><br>
+                🎵 <strong>JamBot Premium Credits</strong><br>
+                Available Credits: <strong>12</strong><br>
+                Trial Credits Used: 5/5<br><br>
+                <em>Each AI chord chart generation uses 1 credit.</em>
+            </div>
+
+            <h3><span class="step-badge">3</span>Purchasing Credits</h3>
+            <p>When credits run low, purchase more using:</p>
+
+            <pre><code>/jambot-buy-credits</code></pre>
+
+            <p>This displays available credit packs:</p>
+
+            <div class="example-box">
+                <strong>Credit Packs</strong><br><br>
+                <strong>🎸 10 Credits</strong> - $4.99 (~$0.50/chart)<br>
+                <strong>🎸 25 Credits</strong> - $9.99 (~$0.40/chart, 17% savings)<br>
+                <strong>🎸 50 Credits</strong> - $17.99 (~$0.36/chart, 28% savings)<br><br>
+                <em>Select a pack to open Stripe checkout.</em>
+            </div>
+
+            <p>After selecting a pack:</p>
+            <ol>
+                <li>A secure Stripe checkout link is generated</li>
+                <li>Complete payment through Stripe</li>
+                <li>Credits are automatically added to your server</li>
+                <li>You'll receive a confirmation message</li>
+            </ol>
+
+            <h3><span class="step-badge">4</span>Creating AI Chord Charts</h3>
+            <p>With premium enabled, users can create AI chord charts using:</p>
+
+            <pre><code>/jambot-chart create</code></pre>
+
+            <p>Or by mentioning JamBot:</p>
+
+            <pre><code>@JamBot create a chord chart for "Wagon Wheel"</code></pre>
+
+            <p><strong>Premium gating:</strong></p>
+            <ul>
+                <li>If premium is <strong>not enabled</strong>: Users see a message prompting admin to set up premium</li>
+                <li>If premium is enabled but <strong>no credits</strong>: Users see a message with purchase link</li>
+                <li>If premium is enabled <strong>with credits</strong>: Chart generation proceeds</li>
+            </ul>
+
+            <div class="alert alert-success">
+                <strong>✅ Free Features:</strong> Viewing existing charts (<code>/jambot-chart view</code>) and transposing remain free for all users.
+            </div>
+
+            <h3>Premium Flow Diagram</h3>
+            <pre><code>User: /jambot-chart create "Song Title"
+         │
+         ▼
+┌─────────────────────────────┐
+│ Check: premium_enabled?      │
+└──────────────┬──────────────┘
+               │
+      ┌────────┴────────┐
+      │                 │
+      ▼                 ▼
+    FALSE             TRUE
+      │                 │
+      ▼                 ▼
+  "Premium required"   Check credits
+  "Use /jambot-           │
+   premium-setup"         ▼
+                    ┌──────────────┐
+                    │ credits > 0? │
+                    └──────┬───────┘
+                           │
+                  ┌────────┴────────┐
+                  │                 │
+                  ▼                 ▼
+                FALSE             TRUE
+                  │                 │
+                  ▼                 ▼
+              "No credits"     Generate chart
+              "Buy more with   Store locally
+               /jambot-buy-    Send to channel
+               credits"        Deduct 1 credit</code></pre>
+
+            <h3>Disabling Premium</h3>
+            <p>To disable premium for your server, an administrator can contact support or re-run <code>/jambot-premium-setup</code> with an empty token (if supported).</p>
+
+            <h3>Troubleshooting Premium</h3>
+
+            <h4>"Premium is not enabled for this server"</h4>
+            <ul>
+                <li>An administrator needs to run <code>/jambot-premium-setup</code></li>
+                <li>Verify you have a valid API token from the premium portal</li>
+            </ul>
+
+            <h4>"Insufficient credits"</h4>
+            <ul>
+                <li>Check your balance with <code>/jambot-credits</code></li>
+                <li>Purchase more credits with <code>/jambot-buy-credits</code></li>
+            </ul>
+
+            <h4>"Failed to connect to premium API"</h4>
+            <ul>
+                <li>This is usually temporary; try again in a few moments</li>
+                <li>If persistent, check <a href="configuration.html#premium-features">Premium Configuration</a></li>
+            </ul>
+
             <h2>Next Steps</h2>
             <ul>
                 <li><a href="troubleshooting.html">Troubleshooting common issues</a></li>
                 <li><a href="configuration.html">Update jam leaders and approvers</a></li>
+                <li><a href="configuration.html#premium-features">Configure premium environment variables</a></li>
                 <li><a href="https://github.com/asachs01/jambot/issues">Report issues on GitHub</a></li>
             </ul>
         </main>

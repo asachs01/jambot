@@ -188,6 +188,47 @@ If you want 2 people to approve songs:
 3. **Keep your `.env` file secure** - it still contains sensitive Spotify credentials
 4. **Regularly review** who has jam leader and approver access
 
+## Premium Environment Variables
+
+JamBot supports premium AI chord chart generation through an optional Premium API service. Add these variables to enable premium features:
+
+```env
+# Premium API Configuration
+PREMIUM_API_BASE_URL=https://api.premium.jambot.io
+PREMIUM_API_TIMEOUT=60
+```
+
+### Variable Details
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `PREMIUM_API_BASE_URL` | string | `https://api.premium.jambot.io` | Base URL for the JamBot Premium API. Only change for self-hosted instances. |
+| `PREMIUM_API_TIMEOUT` | integer | `60` | Request timeout in seconds. AI generation can take time; keep at 30+ seconds. |
+
+### How It Works
+
+1. **Configuration**: Set the environment variables above
+2. **Setup**: Server admins run `/jambot-premium-setup` with their API token
+3. **Validation**: Token is validated with the Premium API and securely hashed
+4. **Usage**: Users can create AI chord charts using `/jambot-chart create`
+5. **Credits**: Each generation uses 1 credit; purchase more via `/jambot-buy-credits`
+
+### Premium Commands
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/jambot-premium-setup` | Configure premium API token | Admin only |
+| `/jambot-credits` | View credit balance | Everyone |
+| `/jambot-buy-credits` | Purchase credit packs | Everyone |
+| `/jambot-chart create` | Create AI chord chart | Everyone (requires credits) |
+
+### Related Files
+
+- `src/config.py` - Premium configuration constants
+- `src/premium_client.py` - HTTP client for Premium API (`PremiumClient` class)
+- `src/commands.py` - Premium Discord commands
+- `.env.example` - Example environment variables
+
 ## Support
 
 If you encounter issues:

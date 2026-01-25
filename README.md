@@ -28,6 +28,30 @@ See the [Deployment Guide](DEPLOY_TO_DIGITALOCEAN.md) for detailed instructions.
 - **📊 Persistent Storage**: SQLite database for song history and setlist tracking
 - **🐳 Container-Ready**: Docker support for easy deployment to DigitalOcean Container App
 
+### Premium Features
+
+> **AI-Powered Chord Charts**: Generate professional chord charts for any song using AI. New servers get **5 free generations** to try.
+
+| Feature | Free | Premium |
+|---------|------|---------|
+| View existing chord charts | Yes | Yes |
+| Transpose chord charts | Yes | Yes |
+| Create playlists from setlists | Yes | Yes |
+| **AI chord chart generation** | No | Yes |
+
+**Credit Packs:**
+- 10 credits for $4.99 (~$0.50/chart)
+- 25 credits for $9.99 (~$0.40/chart)
+- 50 credits for $17.99 (~$0.36/chart)
+
+**Quick Start:**
+1. Admin runs `/jambot-premium-setup` with API token
+2. Check balance with `/jambot-credits`
+3. Create charts with `/jambot-chart create "Song Title"`
+4. Buy more credits with `/jambot-buy-credits`
+
+See [AI Chord Charts Documentation](docs/ai-chord-charts.html) for details.
+
 ## Quick Start
 
 ### Prerequisites
