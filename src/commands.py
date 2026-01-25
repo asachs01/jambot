@@ -3,9 +3,16 @@ import discord
 from discord import app_commands
 from discord.ui import Modal, TextInput, View, Button
 from typing import List, Optional
+import bcrypt
 from src.logger import logger
 from src.database import Database
 from src.setlist_parser import SetlistParser
+from src.premium_client import (
+    PremiumClient,
+    InvalidTokenError,
+    APIConnectionError,
+    PremiumAPIError
+)
 
 
 class FeedbackModal(Modal, title="Send Feedback"):
@@ -432,6 +439,146 @@ class ConfigurationModal(Modal, title="Configure Jambot"):
                 invalid_ids.append(str(user_id))
 
         return invalid_ids
+
+
+class PremiumSetupModal(Modal, title="Configure Premium Access"):
+    """Modal for configuring premium API token.
+
+    Allows administrators to set up premium chord chart generation
+    by entering their premium API token.
+    """
+
+    api_token = TextInput(
+        label="Premium API Token",
+        placeholder="Enter your premium API token (jbp_...)",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=100
+    )
+
+    def __init__(self, db: Database):
+        """Initialize the premium setup modal.
+
+        Args:
+            db: Database instance for storing configuration.
+        """
+        super().__init__()
+        self.db = db
+
+    async def on_submit(self, interaction: discord.Interaction):
+        """Handle modal submission.
+
+        Args:
+            interaction: Discord interaction object.
+        """
+        try:
+            token = self.api_token.value.strip()
+            guild_id = interaction.guild_id
+
+            # Check if basic bot configuration exists
+            config = self.db.get_bot_configuration(guild_id)
+            if not config:
+                await interaction.response.send_message(
+                    "Please run `/jambot-setup` first to configure basic settings.",
+                    ephemeral=True
+                )
+                return
+
+            # Defer response since validation may take a moment
+            await interaction.response.defer(ephemeral=True)
+
+            # Validate the token with the premium API
+            try:
+                async with PremiumClient() as client:
+                    result = await client.validate_token(token)
+
+                    if not result.get("valid", False):
+                        await interaction.followup.send(
+                            "Invalid API token. Please check your token and try again.\n\n"
+                            "You can get a premium token at https://premium.jambot.io",
+                            ephemeral=True
+                        )
+                        return
+
+                    # Get credit balance to show in confirmation
+                    credits = await client.get_credits(token, guild_id)
+
+            except InvalidTokenError:
+                await interaction.followup.send(
+                    "Invalid or expired API token. Please check your token and try again.\n\n"
+                    "You can get a premium token at https://premium.jambot.io",
+                    ephemeral=True
+                )
+                return
+            except APIConnectionError as e:
+                await interaction.followup.send(
+                    f"Unable to connect to premium service: {str(e)}\n\n"
+                    "Please try again later or contact support.",
+                    ephemeral=True
+                )
+                return
+            except PremiumAPIError as e:
+                await interaction.followup.send(
+                    f"Premium API error: {str(e)}",
+                    ephemeral=True
+                )
+                return
+
+            # Hash the token for secure storage
+            token_bytes = token.encode('utf-8')
+            token_hash = bcrypt.hashpw(token_bytes, bcrypt.gensalt()).decode('utf-8')
+
+            # Save the premium configuration
+            success = self.db.save_premium_config(
+                guild_id=guild_id,
+                token_hash=token_hash,
+                setup_by=interaction.user.id
+            )
+
+            if not success:
+                await interaction.followup.send(
+                    "Error saving premium configuration. Please try again.",
+                    ephemeral=True
+                )
+                return
+
+            # Track usage
+            self.db.track_usage_event(
+                guild_id,
+                'premium_setup',
+                {'setup_by': interaction.user.id}
+            )
+
+            logger.info(
+                f"Premium access configured by {interaction.user.id} for guild {guild_id}"
+            )
+
+            # Build confirmation message
+            trial_msg = ""
+            if credits.trial_credits_remaining > 0:
+                trial_msg = f"\n**Trial Credits:** {credits.trial_credits_remaining} remaining"
+
+            await interaction.followup.send(
+                f"**Premium access configured successfully!**\n\n"
+                f"**Credits Available:** {credits.credits_remaining}{trial_msg}\n"
+                f"**Lifetime Purchased:** {credits.lifetime_purchased}\n\n"
+                f"You can now use `/jambot-chart create` to generate AI chord charts!\n\n"
+                f"_Use `/jambot-credits` to check your balance, or `/jambot-buy-credits` to purchase more._",
+                ephemeral=True
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing premium setup modal: {e}", exc_info=True)
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    f"Error setting up premium access: {str(e)}",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"Error setting up premium access: {str(e)}",
+                    ephemeral=True
+                )
 
 
 class SetlistPatternConfirmView(View):
@@ -1385,5 +1532,53 @@ class JambotCommands:
                     f"❌ Error cancelling workflow: {str(e)}",
                     ephemeral=True
                 )
+
+        @self.tree.command(
+            name="jambot-premium-setup",
+            description="Configure premium access for AI chord chart generation (Admin only)"
+        )
+        @app_commands.checks.has_permissions(administrator=True)
+        async def premium_setup_command(interaction: discord.Interaction):
+            """Open modal for configuring premium API access.
+
+            This command allows administrators to set up premium features
+            by entering their premium API token.
+
+            Args:
+                interaction: Discord interaction object.
+            """
+            logger.info(
+                f"Premium setup command invoked by {interaction.user.id} "
+                f"in guild {interaction.guild_id}"
+            )
+
+            # Track command usage
+            self.db.track_usage_event(
+                interaction.guild_id,
+                'command_used',
+                {'command': 'jambot-premium-setup'}
+            )
+
+            # Send the premium setup modal
+            modal = PremiumSetupModal(self.db)
+            await interaction.response.send_modal(modal)
+
+        @premium_setup_command.error
+        async def premium_setup_error(
+            interaction: discord.Interaction,
+            error: app_commands.AppCommandError
+        ):
+            """Handle errors for the premium setup command."""
+            if isinstance(error, app_commands.errors.MissingPermissions):
+                await interaction.response.send_message(
+                    "❌ You need administrator permissions to use this command.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ An error occurred while processing the command.",
+                    ephemeral=True
+                )
+                logger.error(f"Error in premium setup command: {error}", exc_info=True)
 
         logger.info("Slash commands registered")
