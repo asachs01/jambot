@@ -14,14 +14,12 @@ class TestJamBotInitialization:
         """Should initialize all required components."""
         from src.bot import JamBot
 
-        with patch.object(JamBot, 'cleanup_expired_workflows') as mock_task:
-            mock_task.start = MagicMock()
-            bot = JamBot()
+        bot = JamBot()
 
-            assert bot.db is not None
-            assert bot.commands_handler is not None
-            assert bot.active_workflows == {}
-            mock_task.start.assert_called_once()
+        assert bot.db is not None
+        assert bot.commands_handler is not None
+        assert bot.active_workflows == {}
+        # Note: cleanup_expired_workflows task is started in setup_hook(), not __init__()
 
 
 class TestWorkflowReadiness:

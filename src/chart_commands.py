@@ -182,11 +182,12 @@ def _create_chart_preview_embed(chart_data: Dict[str, Any]) -> discord.Embed:
 class ChartCommands:
     """Discord slash commands for chord chart management."""
 
-    def __init__(self, bot, db):
+    def __init__(self, bot, db, rate_limiter=None):
         self.bot = bot
         self.db = db
         self.tree = bot.tree
         self.llm_client = LLMClient()
+        self.rate_limiter = rate_limiter
 
     async def setup(self):
         """Register chord chart slash commands."""
@@ -311,6 +312,23 @@ class ChartCommands:
             )
             return
 
+        # Rate limit check (per-user)
+        rate_limit_remaining = -1  # Store remaining count from first check
+        if self.rate_limiter:
+            identifier = f"user:{interaction.user.id}:chord"
+            allowed, rate_limit_remaining = await self.rate_limiter.check_rate_limit(identifier)
+
+            if not allowed:
+                ttl = await self.rate_limiter.get_ttl(identifier)
+                minutes = ttl // 60
+                seconds = ttl % 60
+                await interaction.response.send_message(
+                    f"⏱️ Rate limit exceeded. You can make 3 chord chart requests per 10 minutes. "
+                    f"Please try again in {minutes}m {seconds}s.",
+                    ephemeral=True
+                )
+                return
+
         await interaction.response.defer(thinking=True)
 
         chart = self.db.get_chord_chart(interaction.guild_id, song_title)
@@ -345,11 +363,13 @@ class ChartCommands:
         filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
         file = discord.File(fp=pdf_buf, filename=filename)
 
+        # Build message with rate limit info if available
         status_msg = " **(DRAFT)**" if chart_data['status'] == 'draft' else ""
-        await interaction.followup.send(
-            f"**{chart['title']}** — Key of {display_key}{status_msg}",
-            file=file,
-        )
+        message = f"**{chart['title']}** — Key of {display_key}{status_msg}"
+        if self.rate_limiter and rate_limit_remaining >= 0:
+            message += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
+
+        await interaction.followup.send(message, file=file)
 
     async def _handle_list(self, interaction: discord.Interaction):
         """List all chord charts for this guild."""
@@ -384,6 +404,23 @@ class ChartCommands:
                 ephemeral=True,
             )
             return
+
+        # Rate limit check (per-user)
+        rate_limit_remaining = -1  # Store remaining count from first check
+        if self.rate_limiter:
+            identifier = f"user:{interaction.user.id}:chord"
+            allowed, rate_limit_remaining = await self.rate_limiter.check_rate_limit(identifier)
+
+            if not allowed:
+                ttl = await self.rate_limiter.get_ttl(identifier)
+                minutes = ttl // 60
+                seconds = ttl % 60
+                await interaction.response.send_message(
+                    f"⏱️ Rate limit exceeded. You can make 3 chord chart requests per 10 minutes. "
+                    f"Please try again in {minutes}m {seconds}s.",
+                    ephemeral=True
+                )
+                return
 
         await interaction.response.defer(thinking=True)
 
@@ -431,10 +468,12 @@ class ChartCommands:
         filename = f"{chart['title'].replace(' ', '_')}_{new_key}.pdf"
         file = discord.File(fp=pdf_buf, filename=filename)
 
-        await interaction.followup.send(
-            f"Added Key of {new_key} to **{chart['title']}**.",
-            file=file,
-        )
+        # Build message with rate limit info if available
+        message = f"Added Key of {new_key} to **{chart['title']}**."
+        if self.rate_limiter and rate_limit_remaining >= 0:
+            message += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
+
+        await interaction.followup.send(message, file=file)
 
     async def _handle_generate(
         self, interaction: discord.Interaction,
@@ -635,6 +674,22 @@ class ChartCommands:
 
         logger.info(f"Chart mention request: title='{song_title}', key={requested_key}")
 
+        # Rate limit check (per-user) for chart lookups only (not create requests)
+        rate_limit_remaining = -1  # Store remaining count from first check
+        if not is_create_request and self.rate_limiter:
+            identifier = f"user:{message.author.id}:chord"
+            allowed, rate_limit_remaining = await self.rate_limiter.check_rate_limit(identifier)
+
+            if not allowed:
+                ttl = await self.rate_limiter.get_ttl(identifier)
+                minutes = ttl // 60
+                seconds = ttl % 60
+                await message.reply(
+                    f"⏱️ Rate limit exceeded. You can make 3 chord chart requests per 10 minutes. "
+                    f"Please try again in {minutes}m {seconds}s."
+                )
+                return
+
         guild_id = message.guild.id if message.guild else 0
 
         # Look up chart
@@ -665,10 +720,12 @@ class ChartCommands:
             filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
             file = discord.File(fp=pdf_buf, filename=filename)
 
-            await message.reply(
-                f"**{chart['title']}** — Key of {display_key}",
-                file=file,
-            )
+            # Build message with rate limit info if available
+            reply_msg = f"**{chart['title']}** — Key of {display_key}"
+            if self.rate_limiter and rate_limit_remaining >= 0:
+                reply_msg += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
+
+            await message.reply(reply_msg, file=file)
         else:
             view = CreateChartView(self.db, prefill_title=song_title)
             await message.reply(

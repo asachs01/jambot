@@ -48,6 +48,11 @@ class Database:
 
     def _initialize_schema(self):
         """Create database tables if they don't exist."""
+        # Enable pg_trgm extension for fuzzy text matching
+        pg_trgm_setup = """
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        """
+
         schema = """
         CREATE TABLE IF NOT EXISTS songs (
             id SERIAL PRIMARY KEY,
@@ -173,6 +178,7 @@ class Database:
         );
 
         CREATE INDEX IF NOT EXISTS idx_chord_charts_guild_title ON chord_charts(guild_id, title);
+        CREATE INDEX IF NOT EXISTS idx_chord_charts_title_trgm ON chord_charts USING gin (title gin_trgm_ops);
 
         CREATE TABLE IF NOT EXISTS generation_history (
             id SERIAL PRIMARY KEY,
@@ -233,6 +239,7 @@ class Database:
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute(pg_trgm_setup)
             cursor.execute(schema)
             cursor.execute(migration)
             logger.info("Database schema initialized successfully")
@@ -727,6 +734,7 @@ class Database:
                 return dict(row)
             return None
 
+<<<<<<< HEAD
     def fuzzy_search_chord_chart(self, guild_id: int, query: str) -> Optional[Dict[str, Any]]:
         """Search for a chord chart using fuzzy text matching with pg_trgm.
 
@@ -792,8 +800,45 @@ class Database:
             logger.info(f"Created generation history {history_id} for chart {chart_id} using {model}")
             return history_id
 
+    def search_chord_charts_fuzzy(
+        self, guild_id: int, query: str, threshold: float = 0.3
+    ) -> List[Dict[str, Any]]:
+        """Search chord charts using fuzzy trigram matching.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            query: Search string.
+            threshold: Similarity threshold (0.0-1.0), default 0.3.
+
+        Returns:
+            List of matching chart dicts ordered by similarity score (highest first).
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            try:
+                cursor.execute(
+                    """SELECT *, similarity(title, %s) as sim_score
+                       FROM chord_charts
+                       WHERE guild_id = %s AND similarity(title, %s) > %s
+                       ORDER BY sim_score DESC
+                       LIMIT 10""",
+                    (query, guild_id, query, threshold)
+                )
+                return [dict(row) for row in cursor.fetchall()]
+            except Exception as e:
+                # Fallback if pg_trgm not available
+                logger.warning(f"pg_trgm fuzzy search failed, falling back to ILIKE: {e}")
+                cursor.execute(
+                    "SELECT * FROM chord_charts WHERE guild_id = %s AND title ILIKE %s ORDER BY title LIMIT 10",
+                    (guild_id, f"%{query}%")
+                )
+                return [dict(row) for row in cursor.fetchall()]
+
     def search_chord_charts(self, guild_id: int, query: str) -> List[Dict[str, Any]]:
-        """Search chord charts by title (case-insensitive, substring match).
+        """Search chord charts by title (case-insensitive, substring match with fuzzy fallback).
+
+        First attempts exact ILIKE match. If no results, automatically retries with fuzzy matching
+        at threshold 0.3 for better user experience.
 
         Args:
             guild_id: Discord guild (server) ID.
@@ -804,11 +849,19 @@ class Database:
         """
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # First try exact ILIKE match (current behavior)
             cursor.execute(
                 "SELECT * FROM chord_charts WHERE guild_id = %s AND title ILIKE %s ORDER BY title",
                 (guild_id, f"%{query}%")
             )
-            return [dict(row) for row in cursor.fetchall()]
+            results = [dict(row) for row in cursor.fetchall()]
+
+            # If no results, try fuzzy search as fallback
+            if not results:
+                logger.info(f"No exact matches for '{query}', trying fuzzy search")
+                results = self.search_chord_charts_fuzzy(guild_id, query, threshold=0.3)
+
+            return results
 
     def list_chord_charts(self, guild_id: int) -> List[Dict[str, Any]]:
         """List all chord charts for a guild.

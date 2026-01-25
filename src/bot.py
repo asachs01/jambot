@@ -10,6 +10,7 @@ from src.spotify_client import SpotifyClient
 from src.setlist_parser import SetlistParser
 from src.commands import JambotCommands
 from src.chart_commands import ChartCommands
+from src.rate_limiter import RateLimiter
 
 
 class JamBot(commands.Bot):
@@ -32,8 +33,18 @@ class JamBot(commands.Bot):
         self.db = Database()
         self._default_parser = SetlistParser()
         self._guild_parsers: Dict[int, SetlistParser] = {}  # Cache guild-specific parsers
+
+        # Initialize rate limiter (will connect in setup_hook)
+        self.rate_limiter = None
+        if Config.REDIS_URL:
+            self.rate_limiter = RateLimiter(
+                redis_url=Config.REDIS_URL,
+                max_requests=3,
+                window_seconds=600  # 10 minutes
+            )
+
         self.commands_handler = JambotCommands(self, self.db)
-        self.chart_commands = ChartCommands(self, self.db)
+        self.chart_commands = ChartCommands(self, self.db, rate_limiter=self.rate_limiter)
 
         # Track active approval workflows
         self.active_workflows: Dict[int, Dict] = {}  # message_id -> workflow data
@@ -159,6 +170,16 @@ class JamBot(commands.Bot):
 
     async def setup_hook(self):
         """Called when the bot is setting up."""
+        # Connect to Redis for rate limiting
+        if self.rate_limiter:
+            connected = await self.rate_limiter.connect()
+            if connected:
+                logger.info("Rate limiting enabled")
+            else:
+                logger.warning("Rate limiting disabled - Redis connection failed")
+        else:
+            logger.info("Rate limiting disabled - REDIS_URL not configured")
+
         # Start background task for expired workflow cleanup
         self.cleanup_expired_workflows.start()
 
@@ -199,10 +220,21 @@ class JamBot(commands.Bot):
 
         logger.info("Bot is ready. Use /jambot-setup to configure jam leaders and approvers in each server.")
 
+    async def close(self):
+        """Close bot and cleanup resources."""
+        # Close Redis connection gracefully
+        if self.rate_limiter:
+            await self.rate_limiter.close()
+
+        # Close parent bot connection
+        await super().close()
+        logger.info("Bot closed and cleaned up resources")
+
     async def on_disconnect(self):
         """Called when the bot disconnects from Discord."""
         from src.health_state import health_state
         health_state.set_disconnected()
+
         logger.warning("Disconnected from Discord")
 
     async def on_error(self, event, *args, **kwargs):
