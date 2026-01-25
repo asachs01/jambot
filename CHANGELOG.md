@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- TNBGJ songbook import script to digitize existing canon as approved charts (8 songs available, expandable to 51 when full dataset provided)
+- Comprehensive test suite for songbook import transformations (25 tests, 100% pass rate)
+- Validation script for verifying songbook data without database connection
 - Chord chart generation feature with `/jambot-chart` slash command (create, view, list, transpose).
 - PDF chord charts in TNBGJ songbook format (landscape letter, lyrics left, chord grid right).
 - Chromatic transposition utility with bluegrass-appropriate sharp/flat spellings.
