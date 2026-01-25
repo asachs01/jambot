@@ -581,6 +581,101 @@ class PremiumSetupModal(Modal, title="Configure Premium Access"):
                 )
 
 
+class CreditPackSelectView(View):
+    """View with buttons for selecting credit pack sizes to purchase."""
+
+    CREDIT_PACKS = [
+        {"id": "credit_pack_10", "credits": 10, "price": "$4.99", "label": "10 Credits"},
+        {"id": "credit_pack_25", "credits": 25, "price": "$9.99", "label": "25 Credits", "savings": "17%"},
+        {"id": "credit_pack_50", "credits": 50, "price": "$17.99", "label": "50 Credits", "savings": "28%"},
+    ]
+
+    def __init__(self, db: Database, guild_id: int, token: str):
+        """Initialize the credit pack selection view.
+
+        Args:
+            db: Database instance.
+            guild_id: Guild ID for the purchase.
+            token: Premium API token for generating checkout URLs.
+        """
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.db = db
+        self.guild_id = guild_id
+        self.token = token
+
+        # Add buttons for each credit pack
+        for pack in self.CREDIT_PACKS:
+            savings_text = f" ({pack['savings']} off)" if pack.get('savings') else ""
+            button = Button(
+                label=f"{pack['label']} - {pack['price']}{savings_text}",
+                style=discord.ButtonStyle.primary,
+                custom_id=pack['id']
+            )
+            button.callback = self._create_callback(pack['id'])
+            self.add_item(button)
+
+    def _create_callback(self, product_id: str):
+        """Create a callback function for a specific product.
+
+        Args:
+            product_id: Product ID for checkout.
+
+        Returns:
+            Async callback function.
+        """
+        async def callback(interaction: discord.Interaction):
+            try:
+                await interaction.response.defer(ephemeral=True)
+
+                async with PremiumClient() as client:
+                    checkout_url = await client.get_checkout_url(
+                        self.token,
+                        product_id,
+                        self.guild_id
+                    )
+
+                if not checkout_url:
+                    await interaction.followup.send(
+                        "Unable to generate checkout URL. Please try again later.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Track purchase attempt
+                self.db.track_usage_event(
+                    self.guild_id,
+                    'credit_purchase_started',
+                    {'product_id': product_id}
+                )
+
+                await interaction.followup.send(
+                    f"**Complete your purchase:**\n\n"
+                    f"{checkout_url}\n\n"
+                    f"_This link expires in 24 hours. Credits will be added immediately after payment._",
+                    ephemeral=True
+                )
+
+            except InvalidTokenError:
+                await interaction.followup.send(
+                    "Your premium token is invalid or expired. "
+                    "Please run `/jambot-premium-setup` to reconfigure.",
+                    ephemeral=True
+                )
+            except APIConnectionError as e:
+                await interaction.followup.send(
+                    f"Unable to connect to premium service: {str(e)}",
+                    ephemeral=True
+                )
+            except Exception as e:
+                logger.error(f"Error generating checkout URL: {e}", exc_info=True)
+                await interaction.followup.send(
+                    f"Error generating checkout URL: {str(e)}",
+                    ephemeral=True
+                )
+
+        return callback
+
+
 class SetlistPatternConfirmView(View):
     """View with buttons to confirm or reject learned setlist patterns."""
 
@@ -1580,5 +1675,168 @@ class JambotCommands:
                     ephemeral=True
                 )
                 logger.error(f"Error in premium setup command: {error}", exc_info=True)
+
+        @self.tree.command(
+            name="jambot-credits",
+            description="Check your premium credit balance for AI chord chart generation"
+        )
+        async def credits_command(interaction: discord.Interaction):
+            """Display current credit balance for the server.
+
+            Args:
+                interaction: Discord interaction object.
+            """
+            try:
+                guild_id = interaction.guild_id
+                logger.info(
+                    f"Credits command invoked by {interaction.user.id} "
+                    f"in guild {guild_id}"
+                )
+
+                # Track command usage
+                self.db.track_usage_event(
+                    guild_id,
+                    'command_used',
+                    {'command': 'jambot-credits'}
+                )
+
+                # Check if premium is enabled
+                if not self.db.is_premium_enabled(guild_id):
+                    await interaction.response.send_message(
+                        "**Premium not configured**\n\n"
+                        "Premium access is required for AI chord chart generation.\n\n"
+                        "Get started with **5 free trial generations**!\n"
+                        "Use `/jambot-premium-setup` to configure your premium token.\n\n"
+                        "_Visit https://premium.jambot.io to get a token._",
+                        ephemeral=True
+                    )
+                    return
+
+                await interaction.response.defer(ephemeral=True)
+
+                # Get the stored token (we need to retrieve it for API calls)
+                premium_config = self.db.get_premium_config(guild_id)
+                if not premium_config or not premium_config.get('premium_api_token_hash'):
+                    await interaction.followup.send(
+                        "Premium configuration error. Please run `/jambot-premium-setup` again.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Note: We can't use the hashed token directly - we'd need to store the
+                # token securely or require re-entry. For MVP, we'll show a message
+                # to use the premium portal for detailed balance info.
+                # This is a security tradeoff - storing unhashed tokens is risky.
+
+                # For now, show a generic message suggesting the portal
+                embed = discord.Embed(
+                    title="Premium Credits",
+                    description=(
+                        "Use the premium portal for detailed credit information:\n"
+                        "https://premium.jambot.io/dashboard\n\n"
+                        "_Credit balance is also shown after each chart generation._"
+                    ),
+                    color=discord.Color.gold()
+                )
+                embed.add_field(
+                    name="Premium Status",
+                    value="Enabled",
+                    inline=True
+                )
+                embed.add_field(
+                    name="Need More Credits?",
+                    value="Use `/jambot-buy-credits`",
+                    inline=True
+                )
+
+                await interaction.followup.send(embed=embed, ephemeral=True)
+
+            except Exception as e:
+                logger.error(f"Error in credits command: {e}", exc_info=True)
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        f"Error checking credits: {str(e)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"Error checking credits: {str(e)}",
+                        ephemeral=True
+                    )
+
+        @self.tree.command(
+            name="jambot-buy-credits",
+            description="Purchase credits for AI chord chart generation"
+        )
+        async def buy_credits_command(interaction: discord.Interaction):
+            """Display credit pack options for purchase.
+
+            Args:
+                interaction: Discord interaction object.
+            """
+            try:
+                guild_id = interaction.guild_id
+                logger.info(
+                    f"Buy credits command invoked by {interaction.user.id} "
+                    f"in guild {guild_id}"
+                )
+
+                # Track command usage
+                self.db.track_usage_event(
+                    guild_id,
+                    'command_used',
+                    {'command': 'jambot-buy-credits'}
+                )
+
+                # Check if premium is enabled
+                if not self.db.is_premium_enabled(guild_id):
+                    await interaction.response.send_message(
+                        "**Premium not configured**\n\n"
+                        "You need to configure premium access first.\n"
+                        "Use `/jambot-premium-setup` to get started with **5 free trial generations**!\n\n"
+                        "_Visit https://premium.jambot.io to get a token._",
+                        ephemeral=True
+                    )
+                    return
+
+                # Build the purchase options embed
+                embed = discord.Embed(
+                    title="Purchase Credits",
+                    description=(
+                        "Select a credit pack to purchase for AI chord chart generation.\n\n"
+                        "Each credit = 1 AI-generated chord chart"
+                    ),
+                    color=discord.Color.green()
+                )
+
+                for pack in CreditPackSelectView.CREDIT_PACKS:
+                    savings = f" **(Save {pack['savings']})**" if pack.get('savings') else ""
+                    per_credit = float(pack['price'].replace('$', '')) / pack['credits']
+                    embed.add_field(
+                        name=f"{pack['credits']} Credits - {pack['price']}{savings}",
+                        value=f"~${per_credit:.2f} per chart",
+                        inline=False
+                    )
+
+                embed.set_footer(text="Purchase links are generated via secure Stripe checkout")
+
+                # For the view, we need the token. Since we only store the hash,
+                # we'll redirect to the portal for purchases
+                await interaction.response.send_message(
+                    embed=embed,
+                    content=(
+                        "**To purchase credits:**\n"
+                        "Visit https://premium.jambot.io/buy\n\n"
+                        "_Credits are applied immediately after payment._"
+                    ),
+                    ephemeral=True
+                )
+
+            except Exception as e:
+                logger.error(f"Error in buy credits command: {e}", exc_info=True)
+                await interaction.response.send_message(
+                    f"Error loading purchase options: {str(e)}",
+                    ephemeral=True
+                )
 
         logger.info("Slash commands registered")
