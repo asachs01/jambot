@@ -166,10 +166,24 @@ class Database:
             created_by BIGINT NOT NULL,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW(),
+            alternate_titles JSONB,
+            source TEXT DEFAULT 'user_created',
+            status TEXT DEFAULT 'approved',
             UNIQUE(guild_id, title)
         );
 
         CREATE INDEX IF NOT EXISTS idx_chord_charts_guild_title ON chord_charts(guild_id, title);
+
+        CREATE TABLE IF NOT EXISTS generation_history (
+            id SERIAL PRIMARY KEY,
+            chart_id INTEGER REFERENCES chord_charts(id),
+            prompt TEXT NOT NULL,
+            response JSONB NOT NULL,
+            model TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_generation_history_chart_id ON generation_history(chart_id);
         """
 
         # Migration for existing databases: add setlist pattern columns if they don't exist
@@ -201,10 +215,19 @@ class Database:
                 ALTER TABLE active_workflows ADD COLUMN initiated_by BIGINT;
             END IF;
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'chord_charts' AND column_name = 'status') THEN
-                ALTER TABLE chord_charts ADD COLUMN status VARCHAR(20) DEFAULT 'pending';
-                CREATE INDEX IF NOT EXISTS idx_chord_charts_status ON chord_charts(guild_id, status);
+                          WHERE table_name = 'chord_charts' AND column_name = 'alternate_titles') THEN
+                ALTER TABLE chord_charts ADD COLUMN alternate_titles JSONB;
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'chord_charts' AND column_name = 'source') THEN
+                ALTER TABLE chord_charts ADD COLUMN source TEXT DEFAULT 'user_created';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'chord_charts' AND column_name = 'status') THEN
+                ALTER TABLE chord_charts ADD COLUMN status TEXT DEFAULT 'approved';
+            END IF;
+            -- Enable pg_trgm extension for fuzzy text search
+            CREATE EXTENSION IF NOT EXISTS pg_trgm;
         END $$;
         """
 
@@ -632,7 +655,9 @@ class Database:
         created_by: int,
         chart_title: Optional[str] = None,
         lyrics: Optional[List[Dict[str, Any]]] = None,
-        status: str = 'pending',
+        source: str = 'user_created',
+        status: str = 'approved',
+        alternate_titles: Optional[List[str]] = None,
     ) -> int:
         """Create or update a chord chart.
 
@@ -643,7 +668,9 @@ class Database:
             created_by: Discord user ID.
             chart_title: Optional abbreviated title.
             lyrics: Optional lyrics data.
-            status: Chart status (pending/approved/rejected).
+            source: Source of chart ('user_created' or 'ai_generated').
+            status: Chart status ('draft', 'approved', 'rejected').
+            alternate_titles: Optional list of alternate title spellings.
 
         Returns:
             Chart database ID.
@@ -654,13 +681,15 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO chord_charts
-                   (guild_id, title, chart_title, lyrics, keys, created_by, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   (guild_id, title, chart_title, lyrics, keys, created_by, source, status, alternate_titles)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (guild_id, title) DO UPDATE SET
                        chart_title = EXCLUDED.chart_title,
                        lyrics = EXCLUDED.lyrics,
                        keys = EXCLUDED.keys,
+                       source = EXCLUDED.source,
                        status = EXCLUDED.status,
+                       alternate_titles = EXCLUDED.alternate_titles,
                        updated_at = NOW()
                    RETURNING id""",
                 (
@@ -668,11 +697,13 @@ class Database:
                     json.dumps(lyrics) if lyrics else None,
                     json.dumps(keys),
                     created_by,
+                    source,
                     status,
+                    json.dumps(alternate_titles) if alternate_titles else None,
                 )
             )
             chart_id = cursor.fetchone()[0]
-            logger.info(f"Created/updated chord chart '{title}' for guild {guild_id} with status '{status}'")
+            logger.info(f"Created/updated chord chart '{title}' for guild {guild_id} (source={source}, status={status})")
             return chart_id
 
     def get_chord_chart(self, guild_id: int, title: str) -> Optional[Dict[str, Any]]:
@@ -695,6 +726,71 @@ class Database:
             if row:
                 return dict(row)
             return None
+
+    def fuzzy_search_chord_chart(self, guild_id: int, query: str) -> Optional[Dict[str, Any]]:
+        """Search for a chord chart using fuzzy text matching with pg_trgm.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            query: Search string (song title).
+
+        Returns:
+            Best matching chart dict if found, None otherwise.
+        """
+        import json
+        query_lower = query.lower()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # Try fuzzy match using pg_trgm similarity or alternate_titles array containment
+            cursor.execute(
+                """SELECT *
+                   FROM chord_charts
+                   WHERE guild_id = %s AND (
+                       LOWER(title) %% %s
+                       OR alternate_titles @> %s::jsonb
+                   )
+                   ORDER BY similarity(LOWER(title), %s) DESC
+                   LIMIT 1""",
+                (guild_id, query_lower, json.dumps([query_lower]), query_lower)
+            )
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def create_generation_history(
+        self,
+        chart_id: int,
+        prompt: str,
+        response: Dict[str, Any],
+        model: str
+    ) -> int:
+        """Create a generation history record for an AI-generated chart.
+
+        Args:
+            chart_id: Chart database ID.
+            prompt: LLM prompt used for generation.
+            response: Raw LLM response data.
+            model: Model identifier (e.g., 'gpt-4', 'claude-3-sonnet-20240229').
+
+        Returns:
+            Generation history ID.
+        """
+        import json
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO generation_history
+                   (chart_id, prompt, response, model)
+                   VALUES (%s, %s, %s, %s)
+                   RETURNING id""",
+                (chart_id, prompt, json.dumps(response), model)
+            )
+            history_id = cursor.fetchone()[0]
+            logger.info(f"Created generation history {history_id} for chart {chart_id} using {model}")
+            return history_id
 
     def search_chord_charts(self, guild_id: int, query: str) -> List[Dict[str, Any]]:
         """Search chord charts by title (case-insensitive, substring match).
