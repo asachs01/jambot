@@ -456,3 +456,112 @@ class TestDatabasePatterns:
         )
 
         assert result is True
+
+class TestChordChartLLMFeatures:
+    """Test LLM-related chord chart database methods."""
+
+    @patch('src.database.psycopg2.connect')
+    def test_create_chord_chart_with_llm_fields(self, mock_connect):
+        """Test creating chord chart with LLM-specific fields."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        mock_cursor.fetchone.return_value = (1,)
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        chart_id = db.create_chord_chart(
+            guild_id=12345,
+            title="Mountain Dew",
+            keys=[{'key': 'G', 'sections': [{'label': 'Verse', 'chords': ['G', 'C', 'D', 'G']}]}],
+            created_by=67890,
+            source='ai_generated',
+            status='draft',
+            alternate_titles=['Mtn Dew', 'Mountain Due'],
+        )
+
+        assert chart_id == 1
+        mock_cursor.execute.assert_called()
+        call_args = mock_cursor.execute.call_args[0]
+        assert 'source' in call_args[0]
+        assert 'status' in call_args[0]
+        assert 'alternate_titles' in call_args[0]
+
+    @patch('src.database.psycopg2.connect')
+    def test_fuzzy_search_chord_chart_finds_match(self, mock_connect):
+        """Test fuzzy_search_chord_chart finds similar title."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        # Mock return value for fuzzy search
+        mock_cursor.fetchone.return_value = {
+            'id': 1,
+            'guild_id': 12345,
+            'title': 'Will the Circle Be Unbroken',
+            'keys': [{'key': 'G', 'sections': []}],
+            'status': 'approved',
+            'source': 'user_created',
+        }
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        result = db.fuzzy_search_chord_chart(12345, 'Circle Be Unbroken')
+
+        assert result is not None
+        assert result['title'] == 'Will the Circle Be Unbroken'
+        mock_cursor.execute.assert_called()
+        call_args = mock_cursor.execute.call_args[0]
+        # Verify pg_trgm similarity operator used
+        assert '%%' in call_args[0]
+
+    @patch('src.database.psycopg2.connect')
+    def test_fuzzy_search_chord_chart_no_match(self, mock_connect):
+        """Test fuzzy_search_chord_chart returns None when no match."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        mock_cursor.fetchone.return_value = None
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        result = db.fuzzy_search_chord_chart(12345, 'Nonexistent Song')
+
+        assert result is None
+
+    @patch('src.database.psycopg2.connect')
+    def test_create_generation_history(self, mock_connect):
+        """Test create_generation_history stores LLM generation record."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        mock_cursor.fetchone.return_value = (1,)
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        history_id = db.create_generation_history(
+            chart_id=1,
+            prompt="Generate chord chart for 'Mountain Dew'",
+            response={
+                'title': 'Mountain Dew',
+                'key': 'G',
+                'sections': [{'label': 'Verse', 'chords': ['G', 'C', 'D', 'G']}]
+            },
+            model='gpt-4'
+        )
+
+        assert history_id == 1
+        mock_cursor.execute.assert_called()
+        call_args = mock_cursor.execute.call_args[0]
+        assert 'generation_history' in call_args[0]
+        assert 'prompt' in call_args[0]
+        assert 'response' in call_args[0]
+        assert 'model' in call_args[0]
