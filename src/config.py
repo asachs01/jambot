@@ -20,6 +20,9 @@ class Config:
     SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI')
     SPOTIFY_REFRESH_TOKEN = os.getenv('SPOTIFY_REFRESH_TOKEN')
 
+    # OpenRouter Configuration
+    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+
     # Database Configuration
     # PostgreSQL connection URL (preferred for production)
     # Format: postgresql://user:password@host:port/database?sslmode=require
