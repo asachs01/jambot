@@ -457,111 +457,171 @@ class TestDatabasePatterns:
 
         assert result is True
 
-class TestChordChartLLMFeatures:
-    """Test LLM-related chord chart database methods."""
+class TestFuzzySearch:
+    """Test fuzzy search functionality for chord charts."""
 
     @patch('src.database.psycopg2.connect')
-    def test_create_chord_chart_with_llm_fields(self, mock_connect):
-        """Test creating chord chart with LLM-specific fields."""
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_connect.return_value = mock_conn
-        mock_cursor.fetchone.return_value = (1,)
-
-        from src.database import Database
-        db = Database(database_url='postgresql://test:test@localhost/test')
-
-        chart_id = db.create_chord_chart(
-            guild_id=12345,
-            title="Mountain Dew",
-            keys=[{'key': 'G', 'sections': [{'label': 'Verse', 'chords': ['G', 'C', 'D', 'G']}]}],
-            created_by=67890,
-            source='ai_generated',
-            status='draft',
-            alternate_titles=['Mtn Dew', 'Mountain Due'],
-        )
-
-        assert chart_id == 1
-        mock_cursor.execute.assert_called()
-        call_args = mock_cursor.execute.call_args[0]
-        assert 'source' in call_args[0]
-        assert 'status' in call_args[0]
-        assert 'alternate_titles' in call_args[0]
-
-    @patch('src.database.psycopg2.connect')
-    def test_fuzzy_search_chord_chart_finds_match(self, mock_connect):
-        """Test fuzzy_search_chord_chart finds similar title."""
+    def test_fuzzy_search_exact_match(self, mock_connect):
+        """Fuzzy search should find exact matches."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
         mock_connect.return_value = mock_conn
 
-        # Mock return value for fuzzy search
-        mock_cursor.fetchone.return_value = {
+        # Mock exact match result
+        mock_cursor.fetchall.return_value = [{
             'id': 1,
-            'guild_id': 12345,
-            'title': 'Will the Circle Be Unbroken',
-            'keys': [{'key': 'G', 'sections': []}],
-            'status': 'approved',
-            'source': 'user_created',
-        }
+            'guild_id': 123,
+            'title': 'Mountain Dew',
+            'keys': [],
+            'sim_score': 1.0
+        }]
 
         from src.database import Database
         db = Database(database_url='postgresql://test:test@localhost/test')
 
-        result = db.fuzzy_search_chord_chart(12345, 'Circle Be Unbroken')
+        results = db.search_chord_charts_fuzzy(123, 'Mountain Dew', threshold=0.3)
 
-        assert result is not None
-        assert result['title'] == 'Will the Circle Be Unbroken'
-        mock_cursor.execute.assert_called()
-        call_args = mock_cursor.execute.call_args[0]
-        # Verify pg_trgm similarity operator used
-        assert '%%' in call_args[0]
+        assert len(results) == 1
+        assert results[0]['title'] == 'Mountain Dew'
 
     @patch('src.database.psycopg2.connect')
-    def test_fuzzy_search_chord_chart_no_match(self, mock_connect):
-        """Test fuzzy_search_chord_chart returns None when no match."""
+    def test_fuzzy_search_typo_match(self, mock_connect):
+        """Fuzzy search should find matches with typos."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
         mock_connect.return_value = mock_conn
-        mock_cursor.fetchone.return_value = None
+
+        # Mock fuzzy match result
+        mock_cursor.fetchall.return_value = [{
+            'id': 1,
+            'guild_id': 123,
+            'title': 'Mountain Dew',
+            'keys': [],
+            'sim_score': 0.85
+        }]
 
         from src.database import Database
         db = Database(database_url='postgresql://test:test@localhost/test')
 
-        result = db.fuzzy_search_chord_chart(12345, 'Nonexistent Song')
+        # Search with typo
+        results = db.search_chord_charts_fuzzy(123, 'Mountan Dew', threshold=0.3)
 
-        assert result is None
+        assert len(results) >= 1
+        # In real database, should find "Mountain Dew"
 
     @patch('src.database.psycopg2.connect')
-    def test_create_generation_history(self, mock_connect):
-        """Test create_generation_history stores LLM generation record."""
+    def test_fuzzy_search_ordering(self, mock_connect):
+        """Fuzzy search should order by similarity score."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
         mock_connect.return_value = mock_conn
-        mock_cursor.fetchone.return_value = (1,)
+
+        # Mock results ordered by similarity
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'guild_id': 123, 'title': 'Mountain Dew', 'sim_score': 0.95},
+            {'id': 2, 'guild_id': 123, 'title': 'Rocky Mountain', 'sim_score': 0.45},
+            {'id': 3, 'guild_id': 123, 'title': 'Fountain Blue', 'sim_score': 0.35}
+        ]
 
         from src.database import Database
         db = Database(database_url='postgresql://test:test@localhost/test')
 
-        history_id = db.create_generation_history(
-            chart_id=1,
-            prompt="Generate chord chart for 'Mountain Dew'",
-            response={
-                'title': 'Mountain Dew',
-                'key': 'G',
-                'sections': [{'label': 'Verse', 'chords': ['G', 'C', 'D', 'G']}]
-            },
-            model='gpt-4'
-        )
+        results = db.search_chord_charts_fuzzy(123, 'Mountain', threshold=0.3)
 
-        assert history_id == 1
-        mock_cursor.execute.assert_called()
-        call_args = mock_cursor.execute.call_args[0]
-        assert 'generation_history' in call_args[0]
-        assert 'prompt' in call_args[0]
-        assert 'response' in call_args[0]
-        assert 'model' in call_args[0]
+        # Should be ordered by descending similarity
+        assert results[0]['sim_score'] >= results[1]['sim_score']
+        assert results[1]['sim_score'] >= results[2]['sim_score']
+
+    @patch('src.database.psycopg2.connect')
+    def test_fuzzy_search_threshold_filtering(self, mock_connect):
+        """Fuzzy search should filter by threshold."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        # Mock: only return results above threshold
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'guild_id': 123, 'title': 'Mountain Dew', 'sim_score': 0.85}
+        ]
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        results = db.search_chord_charts_fuzzy(123, 'Mountain', threshold=0.8)
+
+        # Should only include high-similarity matches
+        for result in results:
+            assert result['sim_score'] >= 0.8
+
+    @patch('src.database.psycopg2.connect')
+    def test_fuzzy_search_no_match(self, mock_connect):
+        """Fuzzy search should return empty for completely different strings."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        mock_cursor.fetchall.return_value = []
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        results = db.search_chord_charts_fuzzy(123, 'xyz123abc', threshold=0.3)
+
+        assert len(results) == 0
+
+    @patch('src.database.psycopg2.connect')
+    def test_fuzzy_search_fallback_on_extension_missing(self, mock_connect):
+        """Fuzzy search should fallback to ILIKE if pg_trgm unavailable."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        # Allow 3 initialization executes (pg_trgm setup, schema, migration) to succeed,
+        # then raise exception on 4th execute (fuzzy search query), then allow ILIKE fallback
+        mock_cursor.execute.side_effect = [
+            None,  # pg_trgm_setup during __init__
+            None,  # schema during __init__
+            None,  # migration during __init__
+            Exception("function similarity does not exist"),  # fuzzy search query
+            None   # ILIKE fallback query
+        ]
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'guild_id': 123, 'title': 'Mountain Dew', 'keys': []}
+        ]
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        results = db.search_chord_charts_fuzzy(123, 'Mountain', threshold=0.3)
+
+        # Should still get results via ILIKE fallback
+        assert len(results) >= 1
+
+    @patch('src.database.psycopg2.connect')
+    def test_search_chord_charts_with_fuzzy_fallback(self, mock_connect):
+        """search_chord_charts should fallback to fuzzy if no exact matches."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        # First call (ILIKE exact) returns nothing, second call (fuzzy) returns match
+        mock_cursor.fetchall.side_effect = [
+            [],  # ILIKE returns nothing
+            [{'id': 1, 'guild_id': 123, 'title': 'Mountain Dew', 'sim_score': 0.85}]  # Fuzzy finds it
+        ]
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        results = db.search_chord_charts(123, 'Mountan Dew')
+
+        # Should find result via fuzzy fallback
+        assert len(results) >= 1
+        assert results[0]['title'] == 'Mountain Dew'

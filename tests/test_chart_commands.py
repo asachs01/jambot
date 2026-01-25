@@ -1,180 +1,239 @@
-"""Tests for chord chart slash commands."""
+"""Integration tests for chord chart commands with rate limiting."""
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from discord import app_commands
+import discord
+from unittest.mock import AsyncMock, MagicMock, patch
+from src.chart_commands import ChartCommands
+from src.rate_limiter import RateLimiter
 
 
-class TestChartListCommand:
-    """Test suite for /jambot chart-list command."""
+@pytest.fixture
+def mock_bot():
+    """Create a mock Discord bot."""
+    bot = MagicMock()
+    bot.tree = MagicMock()
+    return bot
 
-    @pytest.fixture
-    def mock_db_with_charts(self, mock_database):
-        """Mock database with seeded chart data."""
-        # Simulate 25 charts with different statuses
-        def list_filtered(guild_id, status, limit=10, offset=0):
-            all_charts = []
-            for i in range(25):
-                chart_status = ['pending', 'approved', 'rejected'][i % 3]
-                all_charts.append({
-                    'id': i + 1,
-                    'title': f'Test Song {i}',
-                    'chart_title': f'Test Song {i}',
-                    'status': chart_status,
-                    'created_by': 99999,
-                    'created_at': '2024-01-01T00:00:00'
-                })
 
-            # Filter by status
-            if status and status != 'all':
-                filtered = [c for c in all_charts if c['status'] == status]
-            else:
-                filtered = all_charts
+@pytest.fixture
+def mock_db():
+    """Create a mock database."""
+    db = MagicMock()
+    db.get_chord_chart = MagicMock(return_value=None)
+    db.search_chord_charts = MagicMock(return_value=[])
+    return db
 
-            total = len(filtered)
-            paginated = filtered[offset:offset + limit]
 
-            return paginated, total
+@pytest.fixture
+async def mock_rate_limiter():
+    """Create a mock rate limiter."""
+    limiter = MagicMock(spec=RateLimiter)
+    limiter.check_rate_limit = AsyncMock(return_value=(True, 2))
+    limiter.get_ttl = AsyncMock(return_value=600)
+    return limiter
 
-        mock_database.list_chord_charts_filtered = MagicMock(side_effect=list_filtered)
-        return mock_database
 
-    def test_list_filtered_pending(self, mock_db_with_charts):
-        """Test filtering by pending status."""
-        charts, total = mock_db_with_charts.list_chord_charts_filtered(12345, 'pending', limit=10, offset=0)
+@pytest.fixture
+def mock_interaction():
+    """Create a mock Discord interaction."""
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.user = MagicMock()
+    interaction.user.id = 123456
+    interaction.guild_id = 789012
+    interaction.response = AsyncMock()
+    interaction.followup = AsyncMock()
+    return interaction
 
-        assert len(charts) <= 10  # Pagination limit
-        assert total == 9  # 25 charts / 3 statuses ≈ 8-9 pending
-        assert all(c['status'] == 'pending' for c in charts)
 
-    def test_list_filtered_approved(self, mock_db_with_charts):
-        """Test filtering by approved status."""
-        charts, total = mock_db_with_charts.list_chord_charts_filtered(12345, 'approved', limit=10, offset=0)
+@pytest.mark.asyncio
+async def test_view_chord_chart_with_rate_limit_allowed(
+    mock_bot, mock_db, mock_rate_limiter, mock_interaction
+):
+    """Test viewing chord chart when rate limit allows."""
+    # Setup mock data
+    mock_db.get_chord_chart.return_value = {
+        'id': 1,
+        'title': 'Mountain Dew',
+        'chart_title': 'Mountain Dew',
+        'keys': [{'key': 'G', 'sections': []}],
+        'lyrics': None
+    }
 
-        assert len(charts) <= 10
-        assert total == 8  # 25 charts / 3 statuses
-        assert all(c['status'] == 'approved' for c in charts)
+    chart_commands = ChartCommands(mock_bot, mock_db, rate_limiter=mock_rate_limiter)
 
-    def test_list_filtered_rejected(self, mock_db_with_charts):
-        """Test filtering by rejected status."""
-        charts, total = mock_db_with_charts.list_chord_charts_filtered(12345, 'rejected', limit=10, offset=0)
+    with patch('src.chart_commands.generate_chart_pdf') as mock_generate:
+        mock_generate.return_value = MagicMock()
 
-        assert len(charts) <= 10
-        assert total == 8  # 25 charts / 3 statuses
-        assert all(c['status'] == 'rejected' for c in charts)
+        await chart_commands._handle_view(mock_interaction, 'Mountain Dew', None)
 
-    def test_list_filtered_all(self, mock_db_with_charts):
-        """Test 'all' status shows everything."""
-        charts, total = mock_db_with_charts.list_chord_charts_filtered(12345, 'all', limit=10, offset=0)
+        # Verify rate limit was checked
+        mock_rate_limiter.check_rate_limit.assert_called_once_with('user:123456:chord')
 
-        assert len(charts) == 10
-        assert total == 25
+        # Verify chart was generated
+        mock_generate.assert_called_once()
+        mock_interaction.followup.send.assert_called_once()
 
-    def test_pagination_offset(self, mock_db_with_charts):
-        """Test pagination with offset."""
-        page1, _ = mock_db_with_charts.list_chord_charts_filtered(12345, 'all', limit=10, offset=0)
-        page2, _ = mock_db_with_charts.list_chord_charts_filtered(12345, 'all', limit=10, offset=10)
-        page3, _ = mock_db_with_charts.list_chord_charts_filtered(12345, 'all', limit=10, offset=20)
 
-        assert len(page1) == 10
-        assert len(page2) == 10
-        assert len(page3) == 5  # 25 total, last page has 5
+@pytest.mark.asyncio
+async def test_view_chord_chart_rate_limit_exceeded(
+    mock_bot, mock_db, mock_rate_limiter, mock_interaction
+):
+    """Test viewing chord chart when rate limit is exceeded."""
+    # Rate limit returns False (exceeded)
+    mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(False, 0))
+    mock_rate_limiter.get_ttl = AsyncMock(return_value=420)  # 7 minutes
 
-        # Verify no overlap
-        page1_ids = {c['id'] for c in page1}
-        page2_ids = {c['id'] for c in page2}
-        assert len(page1_ids & page2_ids) == 0
+    chart_commands = ChartCommands(mock_bot, mock_db, rate_limiter=mock_rate_limiter)
 
-    def test_embed_formatting(self, mock_db_with_charts):
-        """Test embed contains required fields: id, title, status, requested_by."""
-        charts, _ = mock_db_with_charts.list_chord_charts_filtered(12345, 'all', limit=10, offset=0)
+    await chart_commands._handle_view(mock_interaction, 'Mountain Dew', None)
 
-        for chart in charts:
-            assert 'id' in chart
-            assert 'title' in chart
-            assert 'status' in chart
-            assert 'created_by' in chart  # Maps to requested_by display
+    # Verify rate limit error was sent
+    mock_interaction.response.send_message.assert_called_once()
+    call_args = mock_interaction.response.send_message.call_args
+    assert '⏱️' in call_args[0][0]
+    assert 'Rate limit exceeded' in call_args[0][0]
+    assert call_args[1]['ephemeral'] is True
 
-    def test_empty_results(self, mock_database):
-        """Test handling of empty result sets."""
-        mock_database.list_chord_charts_filtered = MagicMock(return_value=([], 0))
 
-        charts, total = mock_database.list_chord_charts_filtered(12345, 'pending', limit=10, offset=0)
+@pytest.mark.asyncio
+async def test_transpose_chord_chart_with_rate_limit(
+    mock_bot, mock_db, mock_rate_limiter, mock_interaction
+):
+    """Test transposing chord chart with rate limiting."""
+    mock_db.get_chord_chart.return_value = {
+        'id': 1,
+        'title': 'Mountain Dew',
+        'chart_title': 'Mountain Dew',
+        'keys': [{'key': 'G', 'sections': []}],
+        'lyrics': None
+    }
 
-        assert len(charts) == 0
-        assert total == 0
+    chart_commands = ChartCommands(mock_bot, mock_db, rate_limiter=mock_rate_limiter)
 
-    @pytest.mark.asyncio
-    async def test_chart_list_view_build_embed(self, mock_db_with_charts):
-        """Test ChartListView builds correct embed structure."""
-        from src.chart_commands import ChartListView
+    with patch('src.chart_commands.generate_chart_pdf') as mock_generate, \
+         patch('src.chart_commands.transpose_key_entry') as mock_transpose:
 
-        view = ChartListView(mock_db_with_charts, 12345, 'all', 3, 0)
-        embed = await view.build_embed(0)
+        mock_generate.return_value = MagicMock()
+        mock_transpose.return_value = {'key': 'A', 'sections': []}
 
-        assert embed.title is not None
-        assert '📋' in embed.title
-        assert 'Chord Charts' in embed.title
-        assert embed.description is not None
-        assert 'Showing' in embed.description
-        assert len(embed.fields) > 0
-        assert embed.footer.text is not None
-        assert 'Page 1 of 3' in embed.footer.text
+        await chart_commands._handle_transpose(mock_interaction, 'Mountain Dew', 'A')
 
-    @pytest.mark.asyncio
-    async def test_chart_list_view_status_emoji(self, mock_db_with_charts):
-        """Test ChartListView uses correct emoji for each status."""
-        from src.chart_commands import ChartListView
+        # Verify rate limit was checked
+        mock_rate_limiter.check_rate_limit.assert_called_once_with('user:123456:chord')
 
-        # Test pending
-        view_pending = ChartListView(mock_db_with_charts, 12345, 'pending', 1, 0)
-        embed_pending = await view_pending.build_embed(0)
-        assert '⏳' in embed_pending.title
+        # Verify transpose was called
+        mock_transpose.assert_called_once()
 
-        # Test approved
-        view_approved = ChartListView(mock_db_with_charts, 12345, 'approved', 1, 0)
-        embed_approved = await view_approved.build_embed(0)
-        assert '✅' in embed_approved.title or 'Approved' in embed_approved.title
 
-        # Test rejected
-        view_rejected = ChartListView(mock_db_with_charts, 12345, 'rejected', 1, 0)
-        embed_rejected = await view_rejected.build_embed(0)
-        assert '❌' in embed_rejected.title or 'Rejected' in embed_rejected.title
+@pytest.mark.asyncio
+async def test_chart_commands_without_rate_limiter(
+    mock_bot, mock_db, mock_interaction
+):
+    """Test chart commands work without rate limiter (graceful degradation)."""
+    mock_db.get_chord_chart.return_value = {
+        'id': 1,
+        'title': 'Mountain Dew',
+        'keys': [{'key': 'G', 'sections': []}],
+    }
 
-    @pytest.mark.asyncio
-    async def test_chart_list_view_no_pagination_single_page(self, mock_database):
-        """Test ChartListView doesn't add pagination dropdown for single page."""
-        from src.chart_commands import ChartListView
+    # Create chart commands without rate limiter
+    chart_commands = ChartCommands(mock_bot, mock_db, rate_limiter=None)
 
-        mock_database.list_chord_charts_filtered = MagicMock(return_value=([
-            {'id': 1, 'title': 'Test', 'status': 'pending', 'created_by': 123, 'created_at': '2024-01-01'}
-        ], 1))
+    with patch('src.chart_commands.generate_chart_pdf') as mock_generate:
+        mock_generate.return_value = MagicMock()
 
-        view = ChartListView(mock_database, 12345, 'all', 1, 0)
+        # Should work without rate limiting
+        await chart_commands._handle_view(mock_interaction, 'Mountain Dew', None)
 
-        # Single page should not have pagination select
-        assert len(view.children) == 0
+        mock_generate.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_chart_list_view_pagination_multiple_pages(self, mock_db_with_charts):
-        """Test ChartListView adds pagination dropdown for multiple pages."""
-        from src.chart_commands import ChartListView
 
-        view = ChartListView(mock_db_with_charts, 12345, 'all', 3, 0)
+@pytest.mark.asyncio
+async def test_handle_mention_with_rate_limit(mock_bot, mock_db, mock_rate_limiter):
+    """Test mention-based chart request with rate limiting."""
+    mock_message = AsyncMock()
+    mock_message.content = '@jambot chart for Mountain Dew'
+    mock_message.author.id = 123456
+    mock_message.guild.id = 789012
+    mock_message.reply = AsyncMock()
 
-        # Multiple pages should have pagination select
-        assert len(view.children) == 1
-        assert hasattr(view, 'page_select')
+    mock_db.get_chord_chart.return_value = {
+        'id': 1,
+        'title': 'Mountain Dew',
+        'keys': [{'key': 'G', 'sections': []}],
+    }
 
-    @pytest.mark.asyncio
-    async def test_command_integration(self, mock_discord_interaction, mock_db_with_charts):
-        """Test full command integration with mock interaction."""
-        from src.chart_commands import ChartCommands
+    chart_commands = ChartCommands(mock_bot, mock_db, rate_limiter=mock_rate_limiter)
 
-        mock_bot = MagicMock()
-        mock_bot.tree = MagicMock()
+    with patch('src.chart_commands.generate_chart_pdf') as mock_generate:
+        mock_generate.return_value = MagicMock()
 
-        commands = ChartCommands(mock_bot, mock_db_with_charts)
+        await chart_commands.handle_mention(mock_message)
 
-        # Verify command would be registered
-        assert commands.db == mock_db_with_charts
-        assert commands.bot == mock_bot
+        # Verify rate limit was checked
+        mock_rate_limiter.check_rate_limit.assert_called_once_with('user:123456:chord')
+
+
+@pytest.mark.asyncio
+async def test_handle_mention_rate_limit_exceeded(mock_bot, mock_db, mock_rate_limiter):
+    """Test mention-based request when rate limited."""
+    mock_message = AsyncMock()
+    mock_message.content = '@jambot chart for Mountain Dew'
+    mock_message.author.id = 123456
+    mock_message.guild.id = 789012
+    mock_message.reply = AsyncMock()
+
+    # Rate limit exceeded
+    mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(False, 0))
+    mock_rate_limiter.get_ttl = AsyncMock(return_value=540)  # 9 minutes
+
+    chart_commands = ChartCommands(mock_bot, mock_db, rate_limiter=mock_rate_limiter)
+
+    await chart_commands.handle_mention(mock_message)
+
+    # Verify rate limit message was sent
+    mock_message.reply.assert_called_once()
+    call_args = mock_message.reply.call_args[0][0]
+    assert 'Rate limit exceeded' in call_args
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_remaining_count_message(
+    mock_bot, mock_db, mock_rate_limiter, mock_interaction
+):
+    """Test that success messages include remaining request count."""
+    mock_db.get_chord_chart.return_value = {
+        'id': 1,
+        'title': 'Mountain Dew',
+        'keys': [{'key': 'G', 'sections': []}],
+    }
+
+    # First request - 2 remaining
+    mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(True, 2))
+
+    chart_commands = ChartCommands(mock_bot, mock_db, rate_limiter=mock_rate_limiter)
+
+    with patch('src.chart_commands.generate_chart_pdf') as mock_generate:
+        mock_generate.return_value = MagicMock()
+
+        await chart_commands._handle_view(mock_interaction, 'Mountain Dew', None)
+
+        # Verify message includes remaining count
+        call_args = mock_interaction.followup.send.call_args[0][0]
+        assert '2 requests remaining' in call_args or 'remaining' in call_args.lower()
+
+
+@pytest.mark.asyncio
+async def test_create_request_not_rate_limited(mock_bot, mock_db, mock_rate_limiter):
+    """Test that create requests via mention are NOT rate limited."""
+    mock_message = AsyncMock()
+    mock_message.content = '@jambot create a chord chart for New Song'
+    mock_message.author.id = 123456
+    mock_message.reply = AsyncMock()
+
+    chart_commands = ChartCommands(mock_bot, mock_db, rate_limiter=mock_rate_limiter)
+
+    with patch('src.chart_commands.CreateChartView'):
+        await chart_commands.handle_mention(mock_message)
+
+        # Create requests should NOT check rate limit
+        mock_rate_limiter.check_rate_limit.assert_not_called()

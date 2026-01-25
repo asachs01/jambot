@@ -50,6 +50,9 @@ class Config:
     # Legacy SQLite path (no longer used - PostgreSQL required)
     DATABASE_PATH = os.getenv('DATABASE_PATH', '/app/data/jambot.db')
 
+    # Redis Configuration (for rate limiting)
+    REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
     # Logging Configuration
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE = os.getenv('LOG_FILE', '/app/logs/jambot.log')
@@ -66,6 +69,8 @@ class Config:
         can be configured via the /jambot-setup modal instead.
 
         SPOTIFY_REFRESH_TOKEN is also optional as tokens can be stored in the database.
+
+        REDIS_URL is optional - bot works without Redis but rate limiting will be disabled.
         """
         required_vars = [
             'DISCORD_BOT_TOKEN',
@@ -81,5 +86,13 @@ class Config:
 
         if missing:
             raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
+        # Warn if Redis is not configured (optional)
+        if not cls.REDIS_URL or cls.REDIS_URL == 'redis://localhost:6379/0':
+            import logging
+            logging.getLogger(__name__).warning(
+                "REDIS_URL not configured - rate limiting will be disabled. "
+                "Set REDIS_URL environment variable to enable rate limiting."
+            )
 
         return True
