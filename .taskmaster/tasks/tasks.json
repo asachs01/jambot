@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": "1",
+        "id": 1,
         "title": "Project Setup and Environment Configuration",
         "description": "Initialize the Python project, set up Docker, configure environment variables, and prepare for Discord and Spotify integration.",
         "details": "Use Python 3.11+. Create a Dockerfile that installs dependencies (discord.py v2.x, spotipy v2.23+, sqlite3, python-dotenv). Prepare a .env.example file with all required variables. Ensure persistent volume for SQLite. Configure DigitalOcean Container App deployment with resource limits (512MB RAM, 0.5 vCPU, 1GB volume). Use python-dotenv to load environment variables securely. Set file permissions for the SQLite database to restrict access to the bot process only.",
@@ -13,7 +13,7 @@
         "subtasks": []
       },
       {
-        "id": "2",
+        "id": 2,
         "title": "Discord Bot Initialization and Message Monitoring",
         "description": "Implement Discord bot startup, connect to server, and monitor messages from the configured jam leader for setlist detection.",
         "details": "Use discord.py v2.x with required intents (Message Content, Server Members). Authenticate using DISCORD_BOT_TOKEN from .env. Monitor messages in specified channels from DISCORD_JAM_LEADER_ID. Implement async/await for all Discord operations. Log all bot startup and message events using Python's logging module with rotating file handler.",
@@ -26,7 +26,7 @@
         "subtasks": []
       },
       {
-        "id": "3",
+        "id": 3,
         "title": "Setlist Message Parsing and Extraction",
         "description": "Parse detected setlist messages, extract jam date, time, and song list, allowing for minor intro text variations.",
         "details": "Use regular expressions to match setlist patterns, extracting date, time, and numbered song titles (strip key info). Implement robust parsing to handle minor variations in intro text. Validate extracted data and log warnings for unrecognized formats. Store parsed setlist in memory for further processing.",
@@ -39,7 +39,7 @@
         "subtasks": []
       },
       {
-        "id": "4",
+        "id": 4,
         "title": "SQLite Database Schema Design and Implementation",
         "description": "Design and implement the SQLite database schema for songs, setlists, and setlist-song relationships.",
         "details": "Create tables: songs, setlists, setlist_songs as specified. Use sqlite3 with connection pooling for reliability. Ensure atomic transactions for all write operations. Implement schema migrations using Alembic or a simple versioning script. Set up indices on song_title and setlist date for fast lookups. Use parameterized queries to prevent SQL injection.",
@@ -52,7 +52,7 @@
         "subtasks": []
       },
       {
-        "id": "5",
+        "id": 5,
         "title": "Song Matching: Database Lookup and Spotify Search",
         "description": "For each song, check for previously approved versions in the database, otherwise search Spotify for matches.",
         "details": "For each song, query the songs table for existing version. If not found, use spotipy v2.23+ to search Spotify with exact title. If no match, try common bluegrass variations (maintain a mapping or use a configurable list). Limit fuzzy matching to avoid irrelevant results. Return up to 3 matches per new song, capturing track name, artist, album, Spotify track ID, and URL. Handle Spotify API rate limits with exponential backoff and retries.",
@@ -62,11 +62,12 @@
           "3",
           "4"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "in-progress",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T15:22:17.648Z"
       },
       {
-        "id": "6",
+        "id": 6,
         "title": "Admin Validation Workflow via Discord DM",
         "description": "Send a DM to the admin with song match details, support emoji-based approval, manual overrides, and summary confirmation.",
         "details": "Use discord.py to send formatted DMs to DISCORD_ADMIN_ID. For each song, display: pre-approved version (✅), single match (✅), multiple matches (1️⃣ 2️⃣ 3️⃣), or no match (❌, prompt for link). Listen for emoji reactions and message replies. Allow admin to override with Spotify link. After all songs, present summary and request final approval. Implement async/await for all Discord operations. Log all admin actions for audit.",
@@ -79,7 +80,7 @@
         "subtasks": []
       },
       {
-        "id": "7",
+        "id": 7,
         "title": "Manual Song Management Command Implementation",
         "description": "Implement the '@jambot use this version of [song name] for [setlist date] [spotify link]' command for manual overrides.",
         "details": "Parse command using discord.py command framework. Validate Spotify link format using regex. Update song version in setlist (if before playlist creation) and in songs table for future use. Confirm update to admin via DM. Log all manual overrides for audit. Ensure command is only accessible to admin.",
@@ -93,7 +94,7 @@
         "subtasks": []
       },
       {
-        "id": "8",
+        "id": 8,
         "title": "Spotify Playlist Creation and Posting",
         "description": "Create Spotify playlist under configured account, add approved tracks in order, and post link to Discord channel.",
         "details": "Use spotipy with OAuth refresh token for authentication. Create playlist named 'Bluegrass Jam [MM/DD/YYYY]'. Add tracks in setlist order. Handle API errors gracefully, retry if needed, and notify admin if failure persists. Post playlist link to original Discord channel using discord.py. Store playlist info in setlists table. Ensure playlist-modify-public/private scopes are set.",
@@ -106,7 +107,7 @@
         "subtasks": []
       },
       {
-        "id": "9",
+        "id": 9,
         "title": "Song Version Memory and Setlist History Management",
         "description": "Update song usage dates, maintain setlist-song relationships, and ensure version consistency across sessions.",
         "details": "On playlist creation, update last_used date for each song in songs table. Insert setlist and setlist_songs records to maintain history. Ensure first_used is set for new songs. Implement queries to retrieve version consistency stats. Use indices for efficient lookups. Log all updates for audit.",
@@ -119,7 +120,7 @@
         "subtasks": []
       },
       {
-        "id": "10",
+        "id": 10,
         "title": "Comprehensive Error Handling, Logging, and Documentation",
         "description": "Implement robust error handling, logging, and provide complete setup and admin documentation.",
         "details": "Use Python logging with INFO/ERROR levels, rotating file handler, and stdout. Log timestamp, level, module, message. Handle all error scenarios (Discord/Spotify API, database, playlist creation) with retries and admin notifications. Document setup (README), .env.example, database schema, deployment guide, admin workflow, and troubleshooting. Ensure code is well-commented and uses async/await throughout.",
@@ -140,12 +141,12 @@
         "subtasks": []
       },
       {
-        "id": "11",
+        "id": 11,
         "title": "Implement Modal-Based Configuration System for Jam Leaders and Approvers",
         "description": "Replace environment variable configuration for jam leaders and song approvers with a Discord modal-based UI, accessible via a /jambot setup slash command, storing configuration in the database and enforcing admin-only access.",
         "details": "1. Use discord.py v2.x's support for modals and slash commands to implement a /jambot setup command. When invoked, check that the user has administrator permissions in the server (using `interaction.user.guild_permissions.administrator`).\n\n2. On valid invocation, present a modal to the user. The modal should include Discord user select components for configuring multiple jam leaders and song approvers. Use the Discord API's User Select component in modals, allowing up to 25 users per select as per Discord's documented limits[2].\n\n3. On modal submission, extract the selected user IDs for both jam leaders and approvers from the interaction data. Validate that at least one jam leader and one approver are selected.\n\n4. Store the configuration in the database (e.g., a new 'configuration' table or as part of a 'settings' table), associating the selected user IDs with the guild/server ID. Ensure atomic writes and handle concurrent updates safely.\n\n5. Remove any use of environment variables for jam leader and approver configuration. Retain environment variables only for bot token and Spotify credentials.\n\n6. Provide clear feedback to the admin on success or failure of the configuration update, and log all configuration changes for audit purposes.\n\n7. Follow Discord's best practices for modal interaction handling: show the modal as the first response to the slash command interaction, and handle modal submissions in a dedicated event handler[3][5].\n\n8. Ensure code is well-structured, with clear separation between command registration, permission checks, modal construction, submission handling, and database operations.",
         "testStrategy": "1. Register the /jambot setup command and verify it is only accessible to server admins.\n\n2. Invoke the command as an admin and confirm the modal appears with user select components for both jam leaders and approvers, supporting multiple selections.\n\n3. Submit the modal with various valid and invalid combinations (e.g., no selection, duplicate users) and verify correct validation and error handling.\n\n4. Check that the selected user IDs are correctly stored in the database and associated with the correct guild.\n\n5. Attempt to invoke the command as a non-admin and confirm access is denied.\n\n6. Confirm that environment variables for jam leader and approver are no longer used, and that bot token and Spotify credentials remain environment-based.\n\n7. Review logs to ensure all configuration changes are recorded with timestamps and user IDs.\n\n8. Simulate concurrent configuration updates and verify database consistency.",
-        "status": "done",
+        "status": "in-progress",
         "dependencies": [
           "2",
           "4"
@@ -216,10 +217,10 @@
             "updatedAt": "2025-11-17T14:32:38.964Z"
           }
         ],
-        "updatedAt": "2025-11-17T14:32:38.964Z"
+        "updatedAt": "2026-01-25T15:22:35.046Z"
       },
       {
-        "id": "12",
+        "id": 12,
         "title": "Fix Workflow Cleanup Bug: Preserve Active Workflows When Missing Songs Detected",
         "description": "Fix the bug where re-adding ✅ reaction after fixing missing song selections doesn't trigger playlist creation because the workflow is prematurely cleaned up in the finally block.",
         "details": "ROOT CAUSE: The create_playlist_from_workflow() function in src/bot.py (lines 764-772) has a try/finally block where cleanup_workflow() is unconditionally called in the finally clause. When missing songs are detected (lines 641-664), the function returns early but the finally block still executes, removing the workflow from self.active_workflows. When users later fix missing songs and re-add ✅, on_raw_reaction_add() can't find the workflow and silently ignores the reaction.\n\nIMPLEMENTATION STEPS:\n1. Remove cleanup_workflow() from the finally block (lines 764-772) in create_playlist_from_workflow()\n2. Add explicit cleanup_workflow() call at the end of successful playlist creation path (after playlist is created and posted)\n3. Ensure cleanup_workflow() is called in the cancellation handler (❌ reaction path)\n4. Do NOT call cleanup_workflow() when returning early due to missing songs (lines 641-664) - the workflow must remain active\n5. Add logging statements to track workflow lifecycle:\n   - Log when workflow is created/added to active_workflows\n   - Log when missing songs are detected (workflow should remain active)\n   - Log when workflow is successfully completed (before cleanup)\n   - Log when workflow is cancelled (before cleanup)\n   - Log when cleanup_workflow() is called with workflow_id\n\nSPECIFIC CODE CHANGES:\n- src/bot.py lines 764-772: Remove the finally block entirely or remove cleanup_workflow() from it\n- src/bot.py lines 641-664: Add logging statement confirming workflow remains active when missing songs detected\n- src/bot.py: Add cleanup_workflow() call after successful playlist creation (after posting to Discord)\n- src/bot.py lines 565-624: Verify on_raw_reaction_add() properly handles re-triggering for existing workflows\n- src/bot.py: Add cleanup_workflow() to cancellation (❌) reaction handler if not already present\n- Add debug logging throughout workflow lifecycle for troubleshooting\n\nEDGE CASES TO HANDLE:\n- Multiple missing song detection cycles (user adds ✅ multiple times before fixing all songs)\n- User cancels (❌) after missing songs detected - should still clean up\n- Concurrent reactions on same workflow\n- Workflow timeout scenarios (if implemented)",
@@ -234,7 +235,7 @@
         "updatedAt": "2026-01-17T00:51:10.964Z"
       },
       {
-        "id": "13",
+        "id": 13,
         "title": "Fix Bug: Persist Manual DM Song Submissions to Database Immediately",
         "description": "Fix the bug where songs submitted via manual DM reply to song suggestion embeds are only stored in memory but not persisted to the database until playlist creation, causing data loss if the approval workflow doesn't complete.",
         "details": "ROOT CAUSE: In src/bot.py, the handle_dm_message() function (line 155) allows users to reply to song suggestion embeds with Spotify URLs. When they do, it updates workflow['selections'][song_number] in memory (line 232) and sends a confirmation message (lines 240-245), but never calls db.add_or_update_song() to persist the song to the database. Songs are only stored when create_playlist_from_workflow() runs (triggered by ✅ reaction on summary message).\n\nIMPLEMENTATION STEPS:\n1. Locate the handle_dm_message() function in src/bot.py around line 155\n2. After the line that updates workflow['selections'][song_number] (line 232), add a call to persist the song immediately\n3. Extract the guild_id from the workflow dictionary (workflow['guild_id'])\n4. Call self.db.add_or_update_song() with the following parameters:\n   - guild_id: from workflow dict\n   - song_title: the song name from the workflow\n   - spotify_track_id: extracted from the Spotify URL\n   - spotify_url: the URL provided by the user\n   - artist: extract from Spotify track info\n   - album: extract from Spotify track info\n5. Add logging statement: logger.info(f\"Stored manual song submission for '{song_title}' via DM reply to database\")\n6. Wrap the database call in try/except to handle any database errors gracefully and notify the user if storage fails\n7. Ensure the confirmation message (lines 240-245) still sends to the user after successful storage\n8. The song will still be linked to the setlist later when approval completes (existing behavior in create_playlist_from_workflow)\n\nEXAMPLE CODE LOCATION:\n- Reference src/bot.py lines 713-721 for how songs ARE properly stored in create_playlist_from_workflow()\n- Use the same db.add_or_update_song() method pattern from src/database.py line 159\n\nERROR HANDLING:\n- If database storage fails, log the error and notify the user that their submission was received but may need to be resubmitted\n- Ensure workflow selections are still updated even if database storage fails (graceful degradation)",
@@ -249,7 +250,7 @@
         "updatedAt": "2026-01-17T01:03:17.918Z"
       },
       {
-        "id": "14",
+        "id": 14,
         "title": "Persist Active Approval Workflows to Database",
         "description": "Create database persistence layer for approval workflows to prevent data loss during bot restarts, disconnections, or crashes by storing workflow state in a database table instead of memory-only storage.",
         "details": "PROBLEM ANALYSIS:\nCurrently, active_workflows is stored as an in-memory Dict in bot.py. When the bot restarts, disconnects, or crashes, all in-progress approval workflows are lost, forcing users to start over even if they've already made song selections.\n\nDATABASE SCHEMA:\nCreate a new table in database.py:\n\n```sql\nCREATE TABLE active_workflows (\n    id SERIAL PRIMARY KEY,\n    guild_id BIGINT NOT NULL,\n    summary_message_id BIGINT UNIQUE NOT NULL,\n    original_channel_id BIGINT,\n    original_message_id BIGINT,\n    song_matches JSONB NOT NULL,  -- array of song match objects\n    selections JSONB DEFAULT '{}',  -- song_number -> selected track mapping\n    message_ids JSONB DEFAULT '[]',  -- array of DM message IDs\n    approver_ids JSONB DEFAULT '[]',  -- array of approver user IDs\n    created_at TIMESTAMP DEFAULT NOW(),\n    updated_at TIMESTAMP DEFAULT NOW()\n);\n\nCREATE INDEX idx_active_workflows_summary_message ON active_workflows(summary_message_id);\nCREATE INDEX idx_active_workflows_guild ON active_workflows(guild_id);\n```\n\nIMPLEMENTATION STEPS:\n\n1. **Update database.py schema initialization:**\n   - Add active_workflows table creation to the init_db() or schema setup function\n   - Include indices for fast lookups on summary_message_id and guild_id\n   - Add updated_at trigger or handle in application code\n\n2. **Add CRUD methods to database.py:**\n   ```python\n   def save_workflow(self, guild_id, summary_message_id, original_channel_id, \n                     original_message_id, song_matches, selections={}, \n                     message_ids=[], approver_ids=[]):\n       \"\"\"Insert new workflow into database\"\"\"\n       # Convert Python objects to JSON for JSONB columns\n       # Use parameterized query to prevent SQL injection\n       # Return workflow ID\n   \n   def get_workflow(self, summary_message_id):\n       \"\"\"Retrieve workflow by summary message ID\"\"\"\n       # Query by summary_message_id (indexed for performance)\n       # Parse JSONB columns back to Python objects\n       # Return workflow dict or None\n   \n   def get_all_active_workflows(self, guild_id=None):\n       \"\"\"Load all active workflows, optionally filtered by guild\"\"\"\n       # Used during bot startup to restore state\n       # Return list of workflow dicts\n   \n   def update_workflow_selection(self, summary_message_id, song_number, selected_track):\n       \"\"\"Update a single song selection in workflow\"\"\"\n       # Update selections JSONB field\n       # Update updated_at timestamp\n       # Use atomic transaction\n   \n   def update_workflow(self, summary_message_id, **kwargs):\n       \"\"\"Update any workflow fields\"\"\"\n       # Generic update method for selections, message_ids, approver_ids\n       # Update updated_at timestamp\n   \n   def delete_workflow(self, summary_message_id):\n       \"\"\"Remove completed or cancelled workflow\"\"\"\n       # Delete by summary_message_id\n       # Return success boolean\n   ```\n\n3. **Update bot.py on_ready() event handler:**\n   ```python\n   async def on_ready(self):\n       # Existing startup logic...\n       \n       # Load active workflows from database\n       workflows = self.db.get_all_active_workflows()\n       for workflow_data in workflows:\n           # Reconstruct workflow dict from database record\n           self.active_workflows[workflow_data['summary_message_id']] = {\n               'guild_id': workflow_data['guild_id'],\n               'original_channel_id': workflow_data['original_channel_id'],\n               'original_message_id': workflow_data['original_message_id'],\n               'song_matches': workflow_data['song_matches'],\n               'selections': workflow_data['selections'],\n               'message_ids': workflow_data['message_ids'],\n               'approver_ids': workflow_data['approver_ids']\n           }\n       \n       self.logger.info(f\"Restored {len(workflows)} active workflows from database\")\n   ```\n\n4. **Update send_approval_workflow() in bot.py:**\n   - After creating workflow in memory, immediately persist to database\n   ```python\n   # After: self.active_workflows[summary_msg.id] = workflow\n   self.db.save_workflow(\n       guild_id=workflow['guild_id'],\n       summary_message_id=summary_msg.id,\n       original_channel_id=workflow['original_channel_id'],\n       original_message_id=workflow['original_message_id'],\n       song_matches=workflow['song_matches'],\n       selections=workflow['selections'],\n       message_ids=workflow['message_ids'],\n       approver_ids=workflow['approver_ids']\n   )\n   ```\n\n5. **Update reaction handler (on_raw_reaction_add):**\n   - When updating selections in memory, also update database\n   ```python\n   # After updating workflow['selections'][song_number]\n   self.db.update_workflow_selection(\n       summary_message_id=payload.message_id,\n       song_number=song_number,\n       selected_track=selected_track\n   )\n   ```\n\n6. **Update handle_dm_message() for manual song submissions:**\n   - When user replies with Spotify URL, update database\n   ```python\n   # After: workflow['selections'][song_number] = track_data\n   self.db.update_workflow_selection(\n       summary_message_id=workflow_key,\n       song_number=song_number,\n       selected_track=track_data\n   )\n   ```\n\n7. **Update cleanup_workflow() in bot.py:**\n   - Delete from database when workflow completes or is cancelled\n   ```python\n   def cleanup_workflow(self, summary_message_id):\n       if summary_message_id in self.active_workflows:\n           del self.active_workflows[summary_message_id]\n       \n       # Delete from database\n       self.db.delete_workflow(summary_message_id)\n       self.logger.info(f\"Cleaned up workflow {summary_message_id}\")\n   ```\n\n8. **Error Handling:**\n   - Wrap all database operations in try/except blocks\n   - Log database errors but don't crash the bot\n   - If DB write fails, keep in-memory state and retry on next update\n   - Consider adding a background task to sync memory to DB periodically\n\n9. **Migration Considerations:**\n   - Add schema migration script or use Alembic\n   - Handle existing in-memory workflows during deployment (optional: persist before shutdown)\n   - Add database version tracking\n\nTECHNICAL CONSIDERATIONS:\n- Use parameterized queries to prevent SQL injection\n- Ensure atomic transactions for all workflow updates\n- Handle JSON serialization/deserialization carefully (datetime objects, etc.)\n- Consider adding workflow expiration (auto-cleanup after 24-48 hours)\n- Add logging for all database operations for debugging\n- Test with SQLite's JSONB support (or JSON for older versions)",
@@ -265,7 +266,7 @@
         "updatedAt": "2026-01-18T15:39:43.738Z"
       },
       {
-        "id": "15",
+        "id": 15,
         "title": "Add pytest test suite for JamBot Discord bot",
         "description": "Create comprehensive pytest test suite with tests/ directory structure, pytest.ini configuration, and test files for database operations, Discord command handlers, and bot workflow logic with mocked Discord.py and Spotify API responses.",
         "details": "DIRECTORY STRUCTURE:\nCreate the following test directory structure:\n```\ntests/\n├── __init__.py\n├── conftest.py          # Shared fixtures and pytest configuration\n├── test_database.py     # Database CRUD and migration tests\n├── test_commands.py     # Slash command handler tests\n├── test_bot.py          # Workflow logic and reaction handler tests\n└── fixtures/\n    ├── __init__.py\n    ├── discord_fixtures.py   # Mock Discord objects\n    └── spotify_fixtures.py   # Mock Spotify API responses\n```\n\nPYTEST.INI CONFIGURATION:\nCreate pytest.ini in project root:\n```ini\n[pytest]\ntestpaths = tests\npython_files = test_*.py\npython_classes = Test*\npython_functions = test_*\nasyncio_mode = auto\nmarkers =\n    unit: Unit tests\n    integration: Integration tests\n    database: Database tests\n    discord: Discord bot tests\n    spotify: Spotify API tests\naddopts = \n    -v\n    --strict-markers\n    --cov=src\n    --cov-report=html\n    --cov-report=term-missing\n    --asyncio-mode=auto\n```\n\nCONFTEST.PY - SHARED FIXTURES:\n```python\nimport pytest\nimport sqlite3\nfrom unittest.mock import AsyncMock, MagicMock, patch\nimport discord\nfrom discord.ext import commands\n\n@pytest.fixture\ndef test_db():\n    \"\"\"Create in-memory test database\"\"\"\n    conn = sqlite3.connect(':memory:')\n    # Run schema creation from database.py\n    cursor = conn.cursor()\n    # Execute schema SQL\n    yield conn\n    conn.close()\n\n@pytest.fixture\ndef mock_bot():\n    \"\"\"Mock Discord bot instance\"\"\"\n    bot = MagicMock(spec=commands.Bot)\n    bot.user = MagicMock(id=123456789)\n    return bot\n\n@pytest.fixture\ndef mock_guild():\n    \"\"\"Mock Discord guild\"\"\"\n    guild = MagicMock(spec=discord.Guild)\n    guild.id = 987654321\n    guild.name = \"Test Server\"\n    return guild\n\n@pytest.fixture\ndef mock_channel():\n    \"\"\"Mock Discord text channel\"\"\"\n    channel = AsyncMock(spec=discord.TextChannel)\n    channel.id = 111222333\n    channel.send = AsyncMock()\n    return channel\n\n@pytest.fixture\ndef mock_user():\n    \"\"\"Mock Discord user\"\"\"\n    user = MagicMock(spec=discord.User)\n    user.id = 444555666\n    user.name = \"TestUser\"\n    user.send = AsyncMock()\n    return user\n\n@pytest.fixture\ndef mock_interaction():\n    \"\"\"Mock Discord interaction for slash commands\"\"\"\n    interaction = AsyncMock(spec=discord.Interaction)\n    interaction.response = AsyncMock()\n    interaction.followup = AsyncMock()\n    interaction.user = MagicMock(id=444555666)\n    return interaction\n```\n\nTEST_DATABASE.PY - DATABASE TESTS:\n```python\nimport pytest\nfrom src.database import (\n    initialize_database,\n    add_or_update_song,\n    get_song_by_title,\n    create_setlist,\n    add_song_to_setlist,\n    get_setlist_songs,\n    run_migrations\n)\n\n@pytest.mark.database\ndef test_initialize_database(test_db):\n    \"\"\"Test database schema creation\"\"\"\n    initialize_database(test_db)\n    cursor = test_db.cursor()\n    \n    # Verify tables exist\n    cursor.execute(\"SELECT name FROM sqlite_master WHERE type='table'\")\n    tables = {row[0] for row in cursor.fetchall()}\n    assert 'songs' in tables\n    assert 'setlists' in tables\n    assert 'setlist_songs' in tables\n    assert 'active_workflows' in tables\n\n@pytest.mark.database\ndef test_add_or_update_song(test_db):\n    \"\"\"Test adding and updating songs\"\"\"\n    initialize_database(test_db)\n    \n    # Add new song\n    song_id = add_or_update_song(\n        test_db,\n        title=\"Blue Moon of Kentucky\",\n        spotify_track_id=\"abc123\",\n        artist=\"Bill Monroe\",\n        album=\"Test Album\",\n        spotify_url=\"https://open.spotify.com/track/abc123\"\n    )\n    assert song_id is not None\n    \n    # Verify song exists\n    song = get_song_by_title(test_db, \"Blue Moon of Kentucky\")\n    assert song is not None\n    assert song['artist'] == \"Bill Monroe\"\n    \n    # Update existing song\n    updated_id = add_or_update_song(\n        test_db,\n        title=\"Blue Moon of Kentucky\",\n        spotify_track_id=\"xyz789\",\n        artist=\"Bill Monroe & His Blue Grass Boys\",\n        album=\"Updated Album\",\n        spotify_url=\"https://open.spotify.com/track/xyz789\"\n    )\n    assert updated_id == song_id\n    \n    # Verify update\n    updated_song = get_song_by_title(test_db, \"Blue Moon of Kentucky\")\n    assert updated_song['spotify_track_id'] == \"xyz789\"\n\n@pytest.mark.database\ndef test_create_setlist_and_add_songs(test_db):\n    \"\"\"Test setlist creation and song associations\"\"\"\n    initialize_database(test_db)\n    \n    # Create setlist\n    setlist_id = create_setlist(\n        test_db,\n        date=\"2024-01-15\",\n        guild_id=987654321,\n        channel_id=111222333,\n        playlist_url=\"https://open.spotify.com/playlist/test123\"\n    )\n    assert setlist_id is not None\n    \n    # Add songs to setlist\n    song1_id = add_or_update_song(test_db, \"Song 1\", \"track1\", \"Artist 1\", \"Album 1\", \"url1\")\n    song2_id = add_or_update_song(test_db, \"Song 2\", \"track2\", \"Artist 2\", \"Album 2\", \"url2\")\n    \n    add_song_to_setlist(test_db, setlist_id, song1_id, position=1)\n    add_song_to_setlist(test_db, setlist_id, song2_id, position=2)\n    \n    # Verify setlist songs\n    songs = get_setlist_songs(test_db, setlist_id)\n    assert len(songs) == 2\n    assert songs[0]['position'] == 1\n    assert songs[1]['position'] == 2\n\n@pytest.mark.database\ndef test_migrations(test_db):\n    \"\"\"Test database migration system\"\"\"\n    # Test migration execution\n    run_migrations(test_db)\n    \n    # Verify migration tracking table exists\n    cursor = test_db.cursor()\n    cursor.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'\")\n    assert cursor.fetchone() is not None\n```\n\nTEST_COMMANDS.PY - SLASH COMMAND TESTS:\n```python\nimport pytest\nfrom unittest.mock import AsyncMock, patch, MagicMock\nfrom src.commands import setup_slash_commands\n\n@pytest.mark.discord\n@pytest.mark.asyncio\nasync def test_setup_command_admin_only(mock_bot, mock_interaction):\n    \"\"\"Test /jambot setup command requires admin permissions\"\"\"\n    setup_slash_commands(mock_bot)\n    \n    # Mock non-admin user\n    mock_interaction.user.guild_permissions.administrator = False\n    \n    # Find setup command\n    setup_command = next(cmd for cmd in mock_bot.tree.add_command.call_args_list \n                        if 'setup' in str(cmd))\n    \n    # Invoke command\n    with pytest.raises(discord.errors.Forbidden):\n        await setup_command(mock_interaction)\n\n@pytest.mark.discord\n@pytest.mark.asyncio\nasync def test_setup_command_modal_display(mock_bot, mock_interaction):\n    \"\"\"Test /jambot setup displays configuration modal\"\"\"\n    setup_slash_commands(mock_bot)\n    \n    # Mock admin user\n    mock_interaction.user.guild_permissions.administrator = True\n    \n    # Invoke setup command\n    # Verify modal is sent\n    mock_interaction.response.send_modal.assert_called_once()\n    \n    # Verify modal has correct fields\n    modal = mock_interaction.response.send_modal.call_args[0][0]\n    assert 'jam_leaders' in str(modal)\n    assert 'approvers' in str(modal)\n```\n\nTEST_BOT.PY - WORKFLOW AND REACTION HANDLER TESTS:\n```python\nimport pytest\nfrom unittest.mock import AsyncMock, MagicMock, patch\nfrom src.bot import JamBot\n\n@pytest.fixture\ndef jam_bot(test_db, mock_bot):\n    \"\"\"Create JamBot instance with test database\"\"\"\n    with patch('src.bot.discord.Client.__init__', return_value=None):\n        bot = JamBot(database_conn=test_db)\n        bot.user = mock_bot.user\n        return bot\n\n@pytest.mark.discord\n@pytest.mark.asyncio\nasync def test_setlist_detection(jam_bot, mock_channel, mock_user):\n    \"\"\"Test setlist message detection and parsing\"\"\"\n    # Mock jam leader message\n    message = MagicMock()\n    message.author = mock_user\n    message.channel = mock_channel\n    message.content = \"\"\"\n    Tonight's setlist:\n    1. Blue Moon of Kentucky\n    2. Foggy Mountain Breakdown\n    3. Man of Constant Sorrow\n    \"\"\"\n    \n    with patch.object(jam_bot, 'is_jam_leader', return_value=True):\n        await jam_bot.on_message(message)\n    \n    # Verify workflow created\n    assert len(jam_bot.active_workflows) > 0\n\n@pytest.mark.discord\n@pytest.mark.asyncio\nasync def test_approval_reaction_handler(jam_bot, mock_user):\n    \"\"\"Test emoji reaction approval workflow\"\"\"\n    # Create mock workflow\n    workflow_id = 123456\n    jam_bot.active_workflows[workflow_id] = {\n        'guild_id': 987654321,\n        'songs': ['Song 1', 'Song 2'],\n        'selections': {0: {'spotify_track_id': 'track1'}, 1: {'spotify_track_id': 'track2'}},\n        'approver_id': mock_user.id\n    }\n    \n    # Mock reaction payload\n    payload = MagicMock()\n    payload.message_id = workflow_id\n    payload.user_id = mock_user.id\n    payload.emoji = MagicMock(name='✅')\n    \n    with patch.object(jam_bot, 'create_playlist_from_workflow', new_callable=AsyncMock) as mock_create:\n        await jam_bot.on_raw_reaction_add(payload)\n        mock_create.assert_called_once()\n\n@pytest.mark.discord\n@pytest.mark.asyncio\nasync def test_missing_songs_validation(jam_bot, mock_user):\n    \"\"\"Test workflow validation prevents playlist creation with missing songs\"\"\"\n    # Create workflow with missing song\n    workflow_id = 789012\n    jam_bot.active_workflows[workflow_id] = {\n        'guild_id': 987654321,\n        'songs': ['Song 1', 'Song 2', 'Song 3'],\n        'selections': {0: {'spotify_track_id': 'track1'}, 1: None, 2: {'spotify_track_id': 'track3'}},\n        'approver_id': mock_user.id\n    }\n    \n    payload = MagicMock()\n    payload.message_id = workflow_id\n    payload.user_id = mock_user.id\n    payload.emoji = MagicMock(name='✅')\n    \n    with patch.object(jam_bot, 'create_playlist_from_workflow', new_callable=AsyncMock) as mock_create:\n        await jam_bot.on_raw_reaction_add(payload)\n        \n        # Verify workflow not cleaned up (bug fix from Task 12)\n        assert workflow_id in jam_bot.active_workflows\n\n@pytest.mark.discord\n@pytest.mark.asyncio\nasync def test_manual_dm_song_submission(jam_bot, mock_user, test_db):\n    \"\"\"Test manual song submission via DM persists to database immediately\"\"\"\n    # Create workflow\n    workflow_id = 345678\n    jam_bot.active_workflows[workflow_id] = {\n        'guild_id': 987654321,\n        'songs': ['Unknown Song'],\n        'selections': {0: None},\n        'approver_id': mock_user.id\n    }\n    \n    # Mock DM message with Spotify URL\n    message = MagicMock()\n    message.author = mock_user\n    message.content = \"https://open.spotify.com/track/manual123\"\n    message.channel = MagicMock(type=discord.ChannelType.private)\n    \n    with patch('src.bot.extract_spotify_track_id', return_value='manual123'):\n        with patch('src.bot.get_track_details', return_value={\n            'name': 'Manual Song',\n            'artists': [{'name': 'Manual Artist'}],\n            'album': {'name': 'Manual Album'},\n            'external_urls': {'spotify': 'https://open.spotify.com/track/manual123'}\n        }):\n            await jam_bot.handle_dm_message(message)\n    \n    # Verify song persisted to database immediately (bug fix from Task 13)\n    cursor = test_db.cursor()\n    cursor.execute(\"SELECT * FROM songs WHERE spotify_track_id = ?\", ('manual123',))\n    song = cursor.fetchone()\n    assert song is not None\n\n@pytest.mark.spotify\n@pytest.mark.asyncio\nasync def test_spotify_playlist_creation(jam_bot):\n    \"\"\"Test Spotify playlist creation with mocked API\"\"\"\n    workflow = {\n        'guild_id': 987654321,\n        'channel_id': 111222333,\n        'songs': ['Song 1', 'Song 2'],\n        'selections': {\n            0: {'spotify_track_id': 'track1', 'name': 'Song 1'},\n            1: {'spotify_track_id': 'track2', 'name': 'Song 2'}\n        }\n    }\n    \n    with patch('src.bot.spotipy.Spotify') as mock_spotify:\n        mock_spotify.return_value.user_playlists_create.return_value = {\n            'id': 'playlist123',\n            'external_urls': {'spotify': 'https://open.spotify.com/playlist/playlist123'}\n        }\n        \n        playlist_url = await jam_bot.create_spotify_playlist(workflow)\n        \n        assert playlist_url == 'https://open.spotify.com/playlist/playlist123'\n        mock_spotify.return_value.playlist_add_items.assert_called_once()\n```\n\nFIXTURES/SPOTIFY_FIXTURES.PY:\n```python\nimport pytest\n\n@pytest.fixture\ndef mock_spotify_search_response():\n    \"\"\"Mock Spotify search API response\"\"\"\n    return {\n        'tracks': {\n            'items': [\n                {\n                    'id': 'track123',\n                    'name': 'Blue Moon of Kentucky',\n                    'artists': [{'name': 'Bill Monroe'}],\n                    'album': {'name': 'The Essential Bill Monroe'},\n                    'external_urls': {'spotify': 'https://open.spotify.com/track/track123'}\n                }\n            ]\n        }\n    }\n\n@pytest.fixture\ndef mock_spotify_track_details():\n    \"\"\"Mock Spotify track details response\"\"\"\n    return {\n        'id': 'track456',\n        'name': 'Foggy Mountain Breakdown',\n        'artists': [{'name': 'Flatt & Scruggs'}],\n        'album': {'name': 'Foggy Mountain Jamboree'},\n        'external_urls': {'spotify': 'https://open.spotify.com/track/track456'}\n    }\n```\n\nDEPENDENCIES:\nInstall required testing packages:\n```\npip install pytest pytest-asyncio pytest-cov pytest-mock\n```\n\nAdd to requirements-dev.txt:\n```\npytest>=7.4.0\npytest-asyncio>=0.21.0\npytest-cov>=4.1.0\npytest-mock>=3.11.0\n```",
@@ -286,7 +287,7 @@
         "updatedAt": "2026-01-19T03:27:59.513Z"
       },
       {
-        "id": "16",
+        "id": 16,
         "title": "Fix Astro Starlight Documentation Site Content Discovery Issue",
         "description": "Resolve the docsLoader content discovery bug where markdown files in subdirectories (getting-started/, setup/, guides/, reference/) are not being detected, with only index.mdx being discovered. Ensure all 9 documentation pages build and deploy correctly to jambot.app via GitHub Actions.",
         "details": "ROOT CAUSE INVESTIGATION:\nThe docsLoader is failing to discover markdown files in subdirectories, suggesting a configuration issue in content.config.ts or a Starlight version compatibility problem.\n\nIMPLEMENTATION STEPS:\n\n1. **Verify Directory Structure and File Permissions:**\n   - Confirm all subdirectories exist: getting-started/, setup/, guides/, reference/\n   - Check file permissions on all .md/.mdx files (should be readable)\n   - Verify file naming conventions match Starlight expectations\n   - List all 9 expected documentation pages and their paths\n\n2. **Audit content.config.ts Configuration:**\n   - Review the docsLoader configuration in content.config.ts\n   - Check glob patterns used for content discovery (should include subdirectories like `**/*.{md,mdx}`)\n   - Verify the base path configuration points to correct docs directory\n   - Ensure collections are properly defined for each subdirectory\n   - Example correct configuration:\n   ```typescript\n   import { defineCollection } from 'astro:content';\n   import { docsLoader } from '@astrojs/starlight/loaders';\n   \n   export const collections = {\n     docs: defineCollection({\n       loader: docsLoader({\n         base: './src/content/docs',\n         // Ensure pattern includes subdirectories\n         pattern: '**/*.{md,mdx}'\n       })\n     })\n   };\n   ```\n\n3. **Check Starlight Version Compatibility:**\n   - Review package.json for @astrojs/starlight version\n   - Check Astro version compatibility with Starlight\n   - Review Starlight changelog for breaking changes in docsLoader API\n   - Update to latest stable versions if needed\n   - Run `npm install` or `pnpm install` to ensure dependencies are properly installed\n\n4. **Verify Astro Configuration:**\n   - Check astro.config.mjs for Starlight integration setup\n   - Ensure sidebar configuration references all subdirectories\n   - Example sidebar config:\n   ```javascript\n   starlight({\n     sidebar: [\n       { label: 'Getting Started', autogenerate: { directory: 'getting-started' } },\n       { label: 'Setup', autogenerate: { directory: 'setup' } },\n       { label: 'Guides', autogenerate: { directory: 'guides' } },\n       { label: 'Reference', autogenerate: { directory: 'reference' } }\n     ]\n   })\n   ```\n\n5. **Build and Deployment Verification:**\n   - Test local build with `npm run build` or `pnpm build`\n   - Verify all 9 pages are generated in dist/ directory\n   - Check build logs for warnings or errors about missing content\n   - Review GitHub Actions workflow file (.github/workflows/*.yml)\n   - Ensure deployment step correctly uploads all built files\n   - Verify jambot.app domain configuration and DNS settings\n\n6. **Add Logging and Debugging:**\n   - Add console.log statements in content.config.ts to debug loader behavior\n   - Use Astro's --verbose flag during build to see detailed output\n   - Check if files are being excluded by .gitignore or .astroignore\n\n7. **Common Fixes:**\n   - Ensure no trailing slashes in path configurations\n   - Check for case sensitivity issues in file/directory names\n   - Verify no special characters in filenames that might break glob patterns\n   - Clear Astro cache: `rm -rf .astro` and rebuild",
@@ -296,16 +297,634 @@
         "priority": "medium",
         "subtasks": [],
         "updatedAt": "2026-01-19T03:28:02.127Z"
+      },
+      {
+        "id": 17,
+        "title": "Create Premium API Repository Structure",
+        "description": "Initialize FastAPI project structure with Poetry dependency management, Docker configuration, and environment variables for PostgreSQL, OpenRouter, and Stripe.",
+        "details": "Create `jambot-premium-api` repo with `pyproject.toml` using Poetry, `src/main.py` FastAPI app, `src/config.py` for env vars (POSTGRES_URL, OPENROUTER_API_KEY, STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY), `Dockerfile` with Python 3.12-slim, `docker-compose.yml` with postgres:16 service, `.env.example`, and `.gitignore` excluding .env and __pycache__.",
+        "testStrategy": "Verify project structure exists, `poetry install` succeeds, `docker-compose up` starts services without errors, env vars load correctly from config.py.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 18,
+        "title": "Design and Implement Premium API Database Schema",
+        "description": "Create PostgreSQL tables for tenants, credits, credit_transactions, generation_history, products using Alembic migrations with indexes and connection pooling.",
+        "details": "Use SQLAlchemy with asyncpg for pooling. Implement exact schema: tenants (UUID PK, discord_guild_id unique, api_token_hash bcrypt, api_token_prefix), credits (balance default 5), credit_transactions, generation_history (UUID PK), products. Add indexes on tenant_id, api_token_prefix, created_at. Generate Alembic migration: `alembic revision --autogenerate -m 'initial_schema'`, `alembic upgrade head`.",
+        "testStrategy": "Run migrations, verify table schemas with `psql \\d`, test insert/select on each table, confirm indexes exist, validate foreign keys and defaults.",
+        "priority": "high",
+        "dependencies": [
+          "17"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 19,
+        "title": "Implement API Token Generation and Validation",
+        "description": "Create secure token generation with bcrypt hashing, 8-char prefix lookup, and validation endpoints with rate limiting.",
+        "details": "Use `secrets.token_bytes(32)` for token secret, base64url encode, prefix first 8 chars. Store bcrypt.hashpw(token.encode(), bcrypt.gensalt()). Implement `POST /api/v1/tokens/generate` (internal, returns `jbp_{prefix}_{secret}`), `POST /api/v1/validate` (lookup prefix, verify hash). Use slowapi for rate limiting (100/hour per IP).",
+        "testStrategy": "Generate token, validate succeeds, invalid token fails, prefix lookup <1ms, rate limit triggers after 100 calls, bcrypt hash verifies correctly.",
+        "priority": "high",
+        "dependencies": [
+          "18"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 20,
+        "title": "Implement Credit Management System",
+        "description": "Build atomic credit deduction, addition, balance queries with transaction logging supporting trial and purchased credits.",
+        "details": "Use SQLAlchemy transactions: `deduct_credit`: check balance>=1 and trial_used<5 or balance>0, insert transaction, update credits atomically. `add_credits`: update lifetime_purchased, balance. `get_balance`: sum available. Trial logic: if trial_used<5 and balance>0 use trial first. Log all in credit_transactions.",
+        "testStrategy": "Test atomicity (deduct when insufficient fails), trial limits (max 5), concurrent deductions don't overspend, transaction logs match balance changes.",
+        "priority": "high",
+        "dependencies": [
+          "18"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 21,
+        "title": "Implement AI Chord Chart Generation Endpoint",
+        "description": "Create POST /api/v1/generate endpoint with token validation, credit check, OpenRouter DeepSeek V3 call, structured response.",
+        "details": "Extract token from Authorization: Bearer, validate_token(), check_credits()>0, deduct_credit(). POST to OpenRouter /api/v1/chat/completions with model='deepseek/deepseek-chat-v3', parse response to chart.sections/lyrics structure. Log to generation_history (tokens from usage, latency=time.perf_counter()). Return chart or insufficient_credits with purchase_url.",
+        "testStrategy": "Mock OpenRouter/stripe, test success flow deducts credit, insufficient returns error, invalid token 401, parse malformed LLM response gracefully.",
+        "priority": "high",
+        "dependencies": [
+          "19",
+          "20"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 22,
+        "title": "Implement Credits Query Endpoint",
+        "description": "Create GET /api/v1/credits to return credits_remaining, trial_credits_remaining, lifetime_purchased.",
+        "details": "Validate token, query credits table: credits_remaining=balance-trial_used (if trial_used<5 else 0), trial_remaining=max(5-trial_used,0), lifetime_purchased. Cache result 30s with Redis if added later.",
+        "testStrategy": "Test with valid token returns correct breakdown, invalid token 401, trial/purchased scenarios match calculations.",
+        "priority": "medium",
+        "dependencies": [
+          "19",
+          "20"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 23,
+        "title": "Set Up Stripe Products and Prices",
+        "description": "Create Stripe products for 10/25/50 credit packs and store in products table.",
+        "details": "In Stripe dashboard (test mode): create products 'JamBot Credits - 10 Pack' ($4.99, metadata={'credits':10}), 25 Pack ($9.99,25), 50 Pack ($17.99,50). Insert into products table: id='10pack', stripe_product_id, stripe_price_id, credits=10, price_cents=499, is_active=true.",
+        "testStrategy": "Verify products exist in Stripe dashboard, products table populated correctly, price/credit mapping accurate.",
+        "priority": "high",
+        "dependencies": [
+          "18"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 24,
+        "title": "Implement Stripe Checkout Session Creation",
+        "description": "Create POST /api/v1/checkout to generate Stripe Checkout URL with guild metadata.",
+        "details": "Validate token, get tenant.stripe_customer_id or stripe.customers.create(email=f'{guild_name} Premium'), stripe.checkout.sessions.create(line_items=[{'price': product.stripe_price_id, 'quantity':1}], mode='payment', metadata={'guild_id': guild_id}, success_url/cancel_url). Return session.url.",
+        "testStrategy": "Mock stripe lib, test creates customer if missing, session.url valid, metadata includes guild_id, handles invalid product_id.",
+        "priority": "high",
+        "dependencies": [
+          "19",
+          "23"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 25,
+        "title": "Implement Stripe Webhook Handler",
+        "description": "Create POST /webhook/stripe to handle checkout.session.completed, add credits idempotently.",
+        "details": "Verify signature stripe.WebhookSignature.verify_header(payload, sig_header, STRIPE_WEBHOOK_SECRET). For 'checkout.session.completed': guild_id=event.data.object.metadata.guild_id, lookup tenant, product=lookup by price_id, add_credits(amount=product.credits, stripe_payment_id=event.id). Idempotency via unique stripe_payment_id constraint.",
+        "testStrategy": "Use stripe-cli to simulate webhook, verify signature passes/fails, credits added once, duplicate event ignored, invalid guild_id handled.",
+        "priority": "high",
+        "dependencies": [
+          "20",
+          "23"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 26,
+        "title": "Add Premium Configuration to Bot Database",
+        "description": "Extend JamBot bot_configuration table with premium_api_token_hash, premium_enabled, premium_setup_by, premium_setup_at.",
+        "details": "Run ALTER TABLE bot_configuration ADD COLUMN premium_api_token_hash VARCHAR(72), ADD premium_enabled BOOLEAN DEFAULT FALSE, ADD premium_setup_by BIGINT, ADD premium_setup_at TIMESTAMP. Implement asyncpg functions save_premium_config(guild_id, token_hash, setup_by), get_premium_config(guild_id), is_premium_enabled(guild_id).",
+        "testStrategy": "Apply schema changes, test insert/retrieve config, hash verification with bcrypt.checkpw, enabled flag updates correctly.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 27,
+        "title": "Create Premium API HTTP Client",
+        "description": "Implement PremiumClient class with aiohttp for async API calls: validate_token, get_credits, generate_chart, get_checkout_url.",
+        "details": "class PremiumClient: async def __init__(self, base_url, timeout=30), async validate_token(token), async get_credits(token, guild_id), async generate_chart(token, guild_id, title, artist=None, key=None), async get_checkout_url(token, product_id, guild_id). Use aiohttp.ClientSession with timeout, json response parsing, error mapping (401->'invalid_token').",
+        "testStrategy": "Mock aiohttp responses, test all methods return parsed data, handle timeouts/401/500 errors, retry logic on 5xx.",
+        "priority": "medium",
+        "dependencies": [
+          "26",
+          "43"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 28,
+        "title": "Implement Premium Setup Modal and Command",
+        "description": "Add /jambot-premium-setup slash command (admin only) with modal for token input, validation, and config storage.",
+        "details": "Use discord.py app_commands, @app_commands.checks.has_permissions(administrator=True). Modal with TextInput(style=password). On submit: client.validate_token(token), hash=bcrypt.hashpw(token), save_premium_config(guild_id, hash, interaction.user.id), set premium_enabled=True. Ephemeral response with credits.",
+        "testStrategy": "Test command hidden for non-admins, modal validation succeeds/fails, config saved with hash, enabled flag set.",
+        "priority": "medium",
+        "dependencies": [
+          "27"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 29,
+        "title": "Implement Credits and Buy Commands",
+        "description": "Add /jambot-credits and /jambot-buy-credits commands with credit display and checkout links.",
+        "details": "/jambot-credits: if premium_enabled, client.get_credits(), embed with balance/trial/purchased, low balance shows buy button. /jambot-buy-credits: View with buttons for 10/25/50 packs, callback generates client.get_checkout_url('10pack'), ephemeral response with URL.",
+        "testStrategy": "Test commands hidden when not premium_enabled, credits display accurate, buy buttons generate valid URLs, low balance messaging.",
+        "priority": "medium",
+        "dependencies": [
+          "27",
+          "28"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 30,
+        "title": "Add Premium Gating to Chart Creation",
+        "description": "Modify /jambot-chart create to check premium status, credits, route to premium API if enabled.",
+        "details": "In handle_chart_create: if not is_premium_enabled(guild_id): show 'Premium required' with setup info. else: credits=await client.get_credits(), if credits>0: chart=await client.generate_chart(), store_chart_locally(chart), send PDF, show remaining. else: 'No credits' + buy link.",
+        "testStrategy": "Test gating blocks non-premium, credits check routes correctly, successful generation stores chart and deducts, zero credits shows buy link.",
+        "priority": "high",
+        "dependencies": [
+          "27",
+          "28",
+          "29"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 31,
+        "title": "Create Premium API Repository Structure",
+        "description": "Initialize FastAPI project structure with Poetry, Docker, and environment configuration for the closed-source premium service.",
+        "details": "Create `jambot-premium-api` repo. Use Poetry: `poetry init`, add `fastapi`, `uvicorn`, `alembic`, `psycopg2-binary`, `bcrypt`, `python-dotenv`, `stripe`, `openai`, `pydantic`. Create `src/main.py` with FastAPI app, `src/config.py` with Pydantic settings for DATABASE_URL, OPENROUTER_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET. Add Dockerfile with multi-stage build, docker-compose.yml with postgres:15, and .env.example. Implement .gitignore for __pycache__, .env, .venv.",
+        "testStrategy": "Verify Poetry dependencies install, docker-compose up starts services without errors, FastAPI app runs on uvicorn src.main:app --reload, environment variables load correctly from config.py.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:28.543Z"
+      },
+      {
+        "id": 32,
+        "title": "Implement Premium API Database Schema",
+        "description": "Create PostgreSQL tables for tenants, credits, transactions, generation history, and products using Alembic migrations.",
+        "details": "Use SQLAlchemy with asyncpg for connection pooling. Define models matching exact schema: tenants (UUID PK, discord_guild_id unique, api_token_hash bcrypt, api_token_prefix), credits (balance default 5, trial_used), credit_transactions, generation_history (UUID PK), products. Create Alembic env.py with async engine. Add indexes: tenants(discord_guild_id, api_token_prefix), credits(tenant_id), credit_transactions(tenant_id). Run `alembic init migrations`, `alembic revision --autogenerate`, `alembic upgrade head`.",
+        "testStrategy": "Run migrations on test DB, verify table schemas with psql \\d, test insert/select on each table, confirm indexes exist, validate foreign key constraints.",
+        "priority": "high",
+        "dependencies": [
+          "31"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:34.222Z"
+      },
+      {
+        "id": 33,
+        "title": "Implement API Token Generation and Validation",
+        "description": "Create secure token generation and validation system with bcrypt hashing and prefix lookup.",
+        "details": "In `src/auth.py`: def generate_token() -> str: secret = base64.urlsafe_b64encode(os.urandom(32)).decode(), prefix = secret[:8], hash = bcrypt.hashpw(secret.encode(), bcrypt.gensalt()).decode(), store both. Token format: f'jbp_{prefix}_{secret}'. validate_token(token): extract prefix/hash, query DB by prefix, verify bcrypt.checkpw(secret.encode(), stored_hash). Endpoints: POST /api/v1/tokens/generate (internal, returns token), POST /api/v1/validate (returns tenant info). Use fastapi.Depends() for auth.",
+        "testStrategy": "Test token generation produces valid format, DB storage/retrieval, validate_token succeeds/fails correctly, prefix lookup <1ms, rate limiting with slowapi.",
+        "priority": "high",
+        "dependencies": [
+          "32"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:40.522Z"
+      },
+      {
+        "id": 34,
+        "title": "Implement Credit Management System",
+        "description": "Build atomic credit deduction, addition, and balance query functions with transaction logging.",
+        "details": "In `src/credits.py`: async def get_balance(tenant_id): query credits.balance - trial_used. async def deduct_credit(tenant_id, gen_id): WITH transaction: check balance>0, UPDATE credits SET balance-=1, trial_used+=1 if trial, INSERT credit_transactions(type='usage', amount=-1, balance_after=new_balance, generation_id=gen_id). async def add_credits(tenant_id, amount, stripe_id): UPDATE credits lifetime_purchased+=amount, balance+=amount, INSERT transaction(type='purchase'). Use async SQLAlchemy sessions.",
+        "testStrategy": "Test atomicity (deduct/add concurrent), trial limits (max 5), balance queries accurate, all changes logged in transactions table, rollback on failure.",
+        "priority": "high",
+        "dependencies": [
+          "32"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:46.413Z"
+      },
+      {
+        "id": 35,
+        "title": "Implement AI Chord Chart Generation Endpoint",
+        "description": "Create POST /api/v1/generate endpoint with token auth, credit check, OpenRouter integration, and structured response.",
+        "details": "Use Depends(auth), check_credits(). Call OpenRouter: client = AsyncOpenAI(base_url='https://openrouter.ai/api/v1', api_key=config.OPENROUTER_API_KEY), response = await client.chat.completions.create(model='deepseek/deepseek-chat-v3', messages=[{'role':'user', 'content':f'Generate chord chart for {title} by {artist} in {key}'}]). Parse JSON response to Chart model (title, key, sections[], lyrics). Log to generation_history (tokens, cost, latency). Deduct credit on success. Return structured chart + credits_remaining.",
+        "testStrategy": "Mock OpenRouter, test full flow: auth→credit check→generation→deduction→log→response. Test insufficient credits returns purchase_url. Verify structured parsing.",
+        "priority": "high",
+        "dependencies": [
+          "33",
+          "34"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:55.956Z"
+      },
+      {
+        "id": 36,
+        "title": "Implement Credits Query Endpoint",
+        "description": "Create GET /api/v1/credits endpoint returning balance breakdown.",
+        "details": "Auth with Depends(), query credits table: {'credits_remaining': balance-trial_used, 'trial_credits_remaining': 5-trial_used if trial_used<5 else 0, 'lifetime_purchased': lifetime_purchased}. Use Pydantic response model.",
+        "testStrategy": "Test with various balance/trial states, verify auth required, response matches exact schema.",
+        "priority": "medium",
+        "dependencies": [
+          "33",
+          "34"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:59.721Z"
+      },
+      {
+        "id": 37,
+        "title": "Set Up Stripe Products and Integrate with Database",
+        "description": "Create Stripe products/prices and populate products table.",
+        "details": "Install stripe: poetry add stripe. In Stripe Dashboard (test mode): create products 'JamBot Credits - 10 Pack' ($4.99, metadata={'credits':10}), 25 Pack ($9.99, credits:25), 50 Pack ($17.99, credits:50). Get price_ids. INSERT into products: ('credit_pack_10', stripe_product_id, stripe_price_id, 10, 499, true), etc. stripe.api_key = config.STRIPE_SECRET_KEY.",
+        "testStrategy": "Verify products table populated correctly, test stripe.Price.retrieve(price_id) returns expected data, product lookup by id works.",
+        "priority": "high",
+        "dependencies": [
+          "32"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:11.205Z"
+      },
+      {
+        "id": 38,
+        "title": "Implement Stripe Checkout Session Creation",
+        "description": "Create POST /api/v1/checkout endpoint generating Stripe Checkout URLs.",
+        "details": "Auth required. Get tenant.stripe_customer_id or stripe.Customer.create(email=f'{guild_name} Premium'). Create session: stripe.checkout.Session.create(customer=customer_id, payment_method_types=['card'], line_items=[{'price': product.stripe_price_id, 'quantity':1}], mode='payment', metadata={'guild_id': guild_id, 'product_id': product_id}, success_url, cancel_url). Return session.url.",
+        "testStrategy": "Mock Stripe, test session creation with/without existing customer, verify metadata includes guild_id, URL returned.",
+        "priority": "high",
+        "dependencies": [
+          "33",
+          "37"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:14.660Z"
+      },
+      {
+        "id": 39,
+        "title": "Implement Stripe Webhook Handler",
+        "description": "Create POST /webhook/stripe endpoint processing checkout.completed events.",
+        "details": "Use stripe.Webhook.construct_event(payload, sig_header, webhook_secret). If 'checkout.session.completed': guild_id=session.metadata.guild_id, product_id=session.metadata.product_id, get credits from products, stripe.Customer.retrieve(session.customer).description for tenant lookup, call add_credits(tenant_id, credits, session.payment_intent). Idempotency: check if stripe_payment_id exists in credit_transactions.",
+        "testStrategy": "Use Stripe CLI forward webhook, test signature verification, credit addition, idempotency (duplicate events), error handling.",
+        "priority": "high",
+        "dependencies": [
+          "34",
+          "37",
+          "38"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:18.668Z"
+      },
+      {
+        "id": 40,
+        "title": "Extend Bot Database for Premium Configuration",
+        "description": "Add premium columns to bot_configuration table and create DB methods.",
+        "details": "Run migration: ALTER TABLE bot_configuration ADD premium_api_token_hash VARCHAR(72), premium_enabled BOOLEAN DEFAULT FALSE, premium_setup_by BIGINT, premium_setup_at TIMESTAMP. Create async def save_premium_config(guild_id, token_hash, setup_by), get_premium_config(guild_id), is_premium_enabled(guild_id). Use bcrypt.hashpw(token, bcrypt.gensalt()).",
+        "testStrategy": "Test migration doesn't break existing data, CRUD operations on new columns, token hashing/verification, premium_enabled toggle.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:22.707Z"
+      },
+      {
+        "id": 41,
+        "title": "Create Premium API HTTP Client",
+        "description": "Implement PremiumClient class with aiohttp for bot integration.",
+        "details": "class PremiumClient: def __init__(self, base_url, timeout=30): self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)), base_url. async validate_token(token), get_credits(token, guild_id), generate_chart(token, guild_id, title, artist, key), get_checkout_url(token, product_id, guild_id). Proper error mapping: APIError, InsufficientCreditsError, etc.",
+        "testStrategy": "Mock aiohttp responses, test all methods with success/error cases, verify timeout handling, proper JSON parsing.",
+        "priority": "medium",
+        "dependencies": [
+          "40"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:26.935Z"
+      },
+      {
+        "id": 42,
+        "title": "Implement Premium Setup Command and Modal",
+        "description": "Add /jambot-premium-setup slash command with token validation modal.",
+        "details": "Create PremiumSetupModal with TextInput(label='API Token', style=password). In callback: client.validate_token(token), hash=bcrypt.hashpw(token.encode(), bcrypt.gensalt()).decode(), save_premium_config(ctx.guild.id, hash, ctx.author.id), set premium_enabled=True. Show credits = await client.get_credits(token, ctx.guild.id). Admin only check.",
+        "testStrategy": "Test command availability (admin only), modal submission, token validation success/fail, DB storage, UI confirmation with credits.",
+        "priority": "medium",
+        "dependencies": [
+          "40",
+          "41"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:30.275Z"
+      },
+      {
+        "id": 43,
+        "title": "Add Premium Configuration to Bot Config Module",
+        "description": "Update src/config.py to include PREMIUM_API_BASE_URL and PREMIUM_API_TIMEOUT environment variables in the Config class. Add documentation for these variables to .env.example.",
+        "details": "1. Open src/config.py and import os or use existing environment loading mechanism (likely python-dotenv or pydantic-settings). 2. Add two new class attributes to the Config class: self.PREMIUM_API_BASE_URL = os.getenv('PREMIUM_API_BASE_URL', 'https://api.jambot-premium.com') and self.PREMIUM_API_TIMEOUT = int(os.getenv('PREMIUM_API_TIMEOUT', '30')). 3. Ensure these are properly typed (str for base_url, int/float for timeout) and include validation: raise ValueError('PREMIUM_API_TIMEOUT must be positive integer') if timeout <= 0. 4. Update any existing Config initialization to load these new fields. 5. Create or update .env.example in project root: add lines '# Premium API Configuration\nPREMIUM_API_BASE_URL=https://api.jambot-premium.com\nPREMIUM_API_TIMEOUT=30' with clear comments explaining usage (base_url for Premium API endpoint, timeout in seconds for HTTP requests). 6. Ensure config.py handles missing env vars gracefully with sensible defaults. 7. Add docstrings to new config fields explaining their purpose for Premium API integration.",
+        "testStrategy": "1. Verify src/config.py loads PREMIUM_API_BASE_URL and PREMIUM_API_TIMEOUT from environment variables with correct defaults when unset. 2. Set PREMIUM_API_TIMEOUT to invalid values (negative, non-numeric) and confirm ValueError is raised. 3. Test Config instantiation: assert config.PREMIUM_API_BASE_URL == 'https://api.jambot-premium.com' and config.PREMIUM_API_TIMEOUT == 30 with default env. 4. Override env vars and confirm: os.environ['PREMIUM_API_TIMEOUT'] = '60'; new Config().PREMIUM_API_TIMEOUT == 60. 5. Check .env.example contains both variables with comments and example values. 6. Run bot startup to ensure no config loading errors from new fields. 7. Validate no breaking changes to existing config fields.",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 44,
+        "title": "Update Bot Documentation for Premium Features",
+        "description": "Update key documentation files to include comprehensive guides for premium feature setup, management, configuration variables, and overview.",
+        "details": "1. **docs/configuration.html**: Add a new 'Premium Features Setup' section explaining PREMIUM_API_BASE_URL (default: https://api.jambot-premium.com) and PREMIUM_API_TIMEOUT (default: 30s) environment variables, including setup steps: copy from .env.example, validate with bot restart, and troubleshooting for common errors like invalid timeout values. Include code snippet: `PREMIUM_API_BASE_URL=https://api.jambot-premium.com` and `PREMIUM_API_TIMEOUT=30`. Reference Task 43 for config details. 2. **docs/admin-guide.html**: Create 'Premium Management Guide' section covering /jambot-premium-setup command (admin-only), modal token input process, validation flow, config storage with bcrypt hashing, enabling premium status, and displaying initial credits. Include screenshots or flow diagram of modal submission and success response. Link to premium gating in chart creation (Task 30). 3. **CONFIGURATION.md**: Add 'Premium Environment Variables' subsection under existing config docs, detailing PREMIUM_API_BASE_URL (required for API calls, str type), PREMIUM_API_TIMEOUT (int, validation for positive values), cross-referencing .env.example and src/config.py. Mention dependencies on PremiumClient (Task 27). 4. **README.md**: Insert 'Premium Features' section after core features, highlighting chart generation via premium API, credit-based usage, setup command, gating logic, and upgrade benefits. Add badge or callout: '🚀 Premium: Enhanced charts with AI generation'. Ensure all sections use consistent markdown styling, include links between files, and update any TOCs. Commit with message 'docs: add comprehensive premium features documentation'.",
+        "testStrategy": "1. Verify docs/configuration.html contains 'Premium Features Setup' section with exact env var names, defaults, and code snippets matching Task 43. 2. Confirm docs/admin-guide.html has 'Premium Management Guide' with /jambot-premium-setup details, token flow, and references to Tasks 27-30. 3. Check CONFIGURATION.md 'Premium Environment Variables' subsection lists PREMIUM_API_BASE_URL and PREMIUM_API_TIMEOUT with types/validation. 4. Validate README.md 'Premium Features' section exists with overview, command mention, and links. 5. Build/test HTML files locally (if applicable), ensure no broken links between docs, search for 'premium' keyword yields all 4 files, and review for consistent terminology (e.g., 'PremiumClient', 'validate_token'). 6. Diff against previous versions to confirm only relevant additions, no regressions in existing content.",
+        "status": "pending",
+        "dependencies": [
+          43,
+          30,
+          28,
+          27
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 45,
+        "title": "Deploy Premium API Service to Production",
+        "description": "Deploy the premium API to a DigitalOcean droplet or app platform, configure PostgreSQL database, set up environment variables, SSL certificate, Stripe webhook endpoint, and monitoring/logging.",
+        "details": "1. Create DigitalOcean Droplet (Ubuntu 22.04, 2GB RAM minimum) or App Platform service for the jambot-premium-api. 2. Install PostgreSQL 16: Add repo `echo 'deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main' > /etc/apt/sources.list.d/pgdg.list`, import key `wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -`, `apt update && apt install postgresql-16 postgresql-contrib`. 3. Configure PostgreSQL: Edit `/etc/postgresql/16/main/postgresql.conf` set `listen_addresses = '*'`, edit `pg_hba.conf` add `host all all 0.0.0.0/0 scram-sha-256`, create user `sudo -u postgres createuser jambot --createdb --pwprompt`, create DB `sudo -u postgres createdb --owner=jambot jambot`, `systemctl restart postgresql`. 4. Deploy app: `git clone` repo, `cd jambot-premium-api`, `poetry install --no-dev --only=main`, copy `.env` with DATABASE_URL=postgresql://jambot:<password>@localhost:5432/jambot, OPENROUTER_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PUBLISHABLE_KEY, set PORT=8000. 5. Run migrations: `poetry run alembic upgrade head`. 6. Start service: Create systemd service `/etc/systemd/system/jambot-premium.service` with `[Unit] Description=JamBot Premium API [Service] WorkingDirectory=/path/to/repo ExecStart=/path/to/.venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2 Restart=always EnvironmentFile=/path/to/.env [Install] WantedBy=multi-user.target`, `systemctl enable --now jambot-premium`. 7. SSL: Use Certbot `apt install certbot python3-certbot-nginx`, `certbot --nginx -d api.jambot-premium.com`. 8. Stripe webhook: Verify endpoint `/stripe/webhook` accessible at https://api.jambot-premium.com/stripe/webhook, configure in Stripe dashboard with STRIPE_WEBHOOK_SECRET. 9. Monitoring: Install Prometheus Node Exporter and Grafana, or use DigitalOcean monitoring; set up logging to `/var/log/jambot-premium.log` with rotation. 10. Firewall: `ufw allow 22,80,443,5432/tcp`. Update bot config with production PREMIUM_API_BASE_URL=https://api.jambot-premium.com.",
+        "testStrategy": "1. Verify droplet/app running, SSH access works. 2. `psql -U jambot -h localhost jambot` connects successfully, run `SELECT 1`. 3. `curl https://api.jambot-premium.com/health` returns 200 OK. 4. Test API endpoints: `/docs` loads Swagger UI, `/validate-token/validtoken` returns 200. 5. Stripe webhook test: Use Stripe CLI `stripe listen --forward-to https://api.jambot-premium.com/stripe/webhook` sends test event, verify logs show receipt. 6. SSL check: `openssl s_client -connect api.jambot-premium.com:443` shows valid cert. 7. Load test: `wrk -t12 -c400 -d30s https://api.jambot-premium.com/health`. 8. Check logs `journalctl -u jambot-premium -f`, confirm no errors. 9. Verify environment vars loaded: API response includes expected config (without secrets). 10. Database migration complete: Check alembic_version table exists.",
+        "status": "pending",
+        "dependencies": [
+          17,
+          26,
+          27,
+          28,
+          30,
+          43
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 46,
+        "title": "End-to-End Testing and Launch Preparation",
+        "description": "Implement comprehensive end-to-end testing for all premium features across free flow, gating, trial, purchase, generation, and metering scenarios, then prepare for production launch.",
+        "details": "1. Create a comprehensive test plan document covering all 6 scenarios: a) Free flow - Test /jambot-chart view succeeds without premium token; b) Gating - /jambot-chart create fails with appropriate error when no valid token; c) Trial - New server gets 5 free generations before metering kicks in; d) Purchase - Test Stripe checkout flow with test cards (use Stripe test keys, simulate 10/25/50 packs via /jambot-buy-credits); e) Generation - Successful AI chart creation via generate_chart API, stored locally in Discord; f) Metering - Verify credits deducted only on successful generation. 2. Set up test environment: Use Stripe test mode keys, create test Discord server, enable premium_config with test token. 3. Implement automated E2E tests using pytest-asyncio + discord.py test client, mocking PremiumClient where needed but testing real API calls to deployed service. 4. Manual testing checklist: Run each scenario step-by-step, capture screenshots/logs, verify database state (credits, configs). 5. Performance testing: Test concurrent chart generations (5+ simultaneous). 6. Launch checklist: Verify Task 45 deployment complete, all tests pass 100%, update .env.example with live Stripe keys instructions, create production rollout plan (canary servers first), set up monitoring alerts for credit deductions and API errors. 7. Documentation: Update README with E2E test instructions, production deployment guide, and troubleshooting for common failures. Use Stripe's recommended test cards (4000000000000002 for declines, 4242424242424242 for success) and Postman collection for API validation.",
+        "testStrategy": "1. Run full automated test suite: pytest tests/e2e/test_premium_flows.py --cov, verify 100% pass rate across all 6 scenarios. 2. Manual validation in test Discord server: Test each flow end-to-end, verify embeds, buttons, API responses, credit balances pre/post. 3. Stripe testing: Use test checkout URLs from /jambot-buy-credits, confirm webhook handling adds credits, test declined cards trigger proper errors. 4. Database verification: Query bot_configuration and credits tables before/after tests, confirm trial credits auto-assigned, deductions only on success. 5. Load test: 10 concurrent /jambot-chart creates, verify no race conditions in metering. 6. Error coverage: Test invalid tokens, insufficient credits, API timeouts, network failures - verify graceful degradation and logging. 7. Production readiness: Smoke test live API endpoints post-Task 45, confirm health checks pass, Stripe webhook endpoint receives test events.",
+        "status": "pending",
+        "dependencies": [
+          17,
+          26,
+          27,
+          28,
+          29,
+          30,
+          43,
+          45
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-19T03:28:02.128Z",
-      "taskCount": 16,
-      "completedCount": 6,
+      "lastModified": "2026-01-25T16:08:30.275Z",
+      "taskCount": 42,
+      "completedCount": 5,
       "tags": [
         "master"
-      ]
+      ],
+      "created": "2026-01-25T16:08:42.193Z",
+      "description": "Tasks for master context",
+      "updated": "2026-01-25T16:09:38.767Z"
+    }
+  },
+  "enhancement-chord-generator": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Set up PostgreSQL database tables",
+        "description": "Create the chord_charts and generation_history tables exactly as specified in the PRD data model",
+        "details": "Use PostgreSQL 16+ with extensions enabled (pg_trgm for fuzzy matching later). Run SQL migrations using Alembic 1.13.2 (latest as of 2026) integrated with existing Python/Discord.py setup. Exact schema: chord_charts with SERIAL PK id, VARCHAR(255) title/artist, TEXT[] alternate_titles, VARCHAR(10)[] keys, JSONB lyrics/chord_progression, VARCHAR(50) source, VARCHAR(20) status, BIGINT requested_by/approved_by/guild_id, TIMESTAMP created_at/approved_at. generation_history with SERIAL PK id, INTEGER FK chart_id REFERENCES chord_charts(id) ON DELETE CASCADE, VARCHAR(100) model_used, INTEGER prompt_tokens/completion_tokens/latency_ms, DECIMAL(10,6) cost_usd, TIMESTAMP created_at. Add indexes: UNIQUE(title, guild_id), GIN on lyrics/chord_progression, B-tree on status/guild_id. Use psycopg3 3.2.0 (latest binary async driver) for connections.",
+        "testStrategy": "Run migration scripts in test DB, verify table schemas with \\d chord_charts and \\d generation_history, insert sample records and query to confirm FK constraints, indexes, and JSONB operations work. Test with pytest and SQLAlchemy test suite.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T13:10:21.241Z"
+      },
+      {
+        "id": 2,
+        "title": "Integrate OpenRouter API client",
+        "description": "Set up OpenRouter API integration with model fallback and token/cost tracking using env var OPENROUTER_API_KEY",
+        "details": "Use openrouter-python SDK v0.5.0 (latest 2026). Base URL: https://openrouter.ai/api/v1. Primary model: deepseek/deepseek-chat:v3, fallback: meta-llama/llama-3.1-70b-instruct:free. Implement async client with aiohttp 3.10.1. Track prompt_tokens, completion_tokens, latency_ms via response metadata. Calculate cost_usd = (input/1M * 0.14 + output/1M * 0.28) / 1000000 for DeepSeek rates. Add exponential backoff retry with tenacity 9.0.0. Graceful fallback on downtime.",
+        "testStrategy": "Mock API responses with pytest-aiohttp, test token counting with tiktoken 0.7.0 (DeepSeek tokenizer), verify cost calculation accuracy against sample responses, test fallback logic by mocking primary model 500 error.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T13:48:08.666Z"
+      },
+      {
+        "id": 3,
+        "title": "Implement system prompt and few-shot examples",
+        "description": "Create the LLM system prompt with TNBGJ format instructions and 3-5 few-shot examples from existing canon",
+        "details": "Hardcode system prompt as specified: 'You are a bluegrass chord chart generator...' with key elements (output JSON structure, sections A/B/Verse/Chorus, 4-col grids, bluegrass keys G/C/D/A). Embed 3-5 JSON examples matching Appendix C schema (vocal song, fiddle tune, unusual key). Total ~1500 tokens. Use Jinja2 3.1.4 templating for dynamic song/artist insertion. Output must strictly parse as JSON with title/artist/keys/lyrics/chord_progression per schema.",
+        "testStrategy": "Unit test prompt rendering with sample inputs, validate generated JSON against Pydantic v2.9.2 model matching schema, ensure token count <2000 with tiktoken.",
+        "priority": "high",
+        "dependencies": [
+          "2"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T14:52:26.200Z"
+      },
+      {
+        "id": 4,
+        "title": "Implement basic /jambot chart command",
+        "description": "Parse /jambot chart <song_title> [by <artist>], check DB existence, generate via LLM if new, store as draft, show Discord embed preview",
+        "details": "Use discord.py 2.4.0 (latest). Slash command with autocomplete disabled. Parse args with re for 'by Artist'. Query DB: SELECT * FROM chord_charts WHERE LOWER(title) % song_title OR alternate_titles && ARRAY[song_title] (using pg_trgm). If approved: embed with lyrics/chords preview. If pending: status msg. Else: call LLM with prompt, parse JSON (strict mode with Pydantic), insert as status='draft' source='ai_generated', insert generation_history. Preview embed: title/song, fields for sections, chord grids as monospace code blocks.",
+        "testStrategy": "Bot test suite with mock DB/LLM, test parsing edge cases (quotes, no artist, long titles), verify embed rendering, DB insert integrity.",
+        "priority": "high",
+        "dependencies": [
+          "1",
+          "2",
+          "3"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T15:20:52.653Z"
+      },
+      {
+        "id": 5,
+        "title": "Configure approver roles and DM notifications",
+        "description": "Define approver roles in guild config, send DMs with preview/PDF to approvers on new draft",
+        "details": "Add guild config table/JSON cache for approver_role_id. Query members with role. On draft insert, DM each: Embed with song/requester/preview, attach PDF (Phase 3), buttons: View of Primary/Secondary buttons with discord.ui.View (persistent). Use discord.py buttons with custom_id for approve/reject/edit.",
+        "testStrategy": "Mock DMs in test guild, verify button payloads, test role-based filtering.",
+        "priority": "medium",
+        "dependencies": [
+          "4"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Implement reaction/button-based approval workflow",
+        "description": "Handle approve/reject/edit buttons in DMs, update status, notify requester",
+        "details": "discord.py on_interaction for custom_ids 'approve_chart', 'reject_chart', 'edit_chart'. On approve: UPDATE status='approved', approved_by=approver.id, approved_at=NOW(). DM requester: 'Approved!'. On reject: status='rejected', optional reason to history. On edit: modal for corrections (JSON edit). Rate limit with Redis 5.0+ or guild cache.",
+        "testStrategy": "Interaction replay tests, verify DB updates, notification delivery.",
+        "priority": "medium",
+        "dependencies": [
+          "5"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Implement PDF generation with ReportLab",
+        "description": "Generate TNBGJ-format PDFs from chord chart JSON for approval/download",
+        "details": "Use ReportLab 4.2.2 (latest 2026) + reportlab-music-notation if available, else custom canvas. Two-panel layout: left lyrics (section headers, monospace lines), right chord grid (4-col measures, 8-row sections, repeat markers ①②). Chords as bold sans-serif over lyrics positions. Page size A4/letter, bluegrass styling (fonts: Helvetica Bold). Generate on draft/approved, store blob in DB or S3 minio.",
+        "testStrategy": "Generate sample PDFs, visual diff against reference Appendix A, verify parseable JSON -> PDF fidelity.",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "4"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T13:36:47.653Z"
+      },
+      {
+        "id": 8,
+        "title": "Add /jambot chart-list command",
+        "description": "List charts filtered by [status], paginated for admins",
+        "details": "Slash command with string choice param status='pending|approved|rejected|all'. Query with guild_id filter, paginated embeds (10/page) using discord.ui.Select. Show id/title/status/requested_by.",
+        "testStrategy": "Test filtering/pagination with seeded DB data.",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "4"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T13:36:47.658Z"
+      },
+      {
+        "id": 9,
+        "title": "Implement /jambot chart-approve/reject/edit commands",
+        "description": "Admin commands for direct approval/rejection/editing by chart_id",
+        "details": "Slash cmds restricted to approver role. Approve: same as button. Reject: optional reason TEXT. Edit: Modal with JSON textarea, validate/parse on submit. Use Pydantic for schema validation.",
+        "testStrategy": "Role-gated tests, JSON validation errors.",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "6",
+          "7"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Import existing 51-song canon",
+        "description": "Digitize and import current TNBGJ songbook as approved charts",
+        "details": "Manual/OCR from PDF using paddleocr 2.8+ or pymupdf 1.24. Parse to JSON schema, insert as source='imported' status='approved'. Add fuzzy alternate_titles.",
+        "testStrategy": "Verify 51 inserts, search accuracy.",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "7"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T14:52:31.181Z"
+      },
+      {
+        "id": 11,
+        "title": "Add fuzzy title matching and rate limiting",
+        "description": "Enable pg_trgm fuzzy search, per-user/guild rate limits",
+        "details": "Enable pg_trgm extension. Query with similarity threshold 0.3. Rate limit: Redis with aioredis 2.1.0, 3 req/10min per user/guild.",
+        "testStrategy": "Fuzzy query tests, rate limit enforcement.",
+        "priority": "low",
+        "dependencies": [
+          "1",
+          "4"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Production deployment and monitoring",
+        "description": "Deploy to DigitalOcean App Platform, add logging/cost monitoring",
+        "details": "Update Dockerfile/requirements.txt. Sentry 8.0+ for errors, Prometheus metrics for costs/latency/songbook growth. Auto-expire pending after 7 days cron.",
+        "testStrategy": "Smoke tests in staging, monitor first 10 generations.",
+        "priority": "low",
+        "dependencies": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11"
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2026-01-25T15:20:52.655Z",
+      "taskCount": 12,
+      "completedCount": 7,
+      "tags": [
+        "enhancement-chord-generator"
+      ],
+      "created": "2026-01-25T16:08:42.194Z",
+      "description": "Tasks for enhancement-chord-generator context"
     }
   }
 }
