@@ -97,13 +97,15 @@ class ChartCreateModal(ui.Modal, title="Create Chord Chart"):
                 created_by=interaction.user.id,
             )
 
-            # Generate PDF
+            # Generate PDF with draft status
+            chart_data['status'] = 'draft'
             pdf_buf = generate_chart_pdf(chart_data)
             filename = f"{chart_data['title'].replace(' ', '_')}.pdf"
             file = discord.File(fp=pdf_buf, filename=filename)
 
             await interaction.followup.send(
-                f"Chord chart for **{chart_data['title']}** (Key of {self.key.value.strip()}) created.",
+                f"Chord chart for **{chart_data['title']}** (Key of {self.key.value.strip()}) created as **DRAFT**.\n"
+                f"Use `/jambot-chart approve` to mark it as approved.",
                 file=file,
             )
 
@@ -139,6 +141,7 @@ class ChartCommands:
             app_commands.Choice(name="view", value="view"),
             app_commands.Choice(name="list", value="list"),
             app_commands.Choice(name="transpose", value="transpose"),
+            app_commands.Choice(name="approve", value="approve"),
         ])
         async def jambot_chart(
             interaction: discord.Interaction,
@@ -154,6 +157,8 @@ class ChartCommands:
                 await self._handle_list(interaction)
             elif action.value == "transpose":
                 await self._handle_transpose(interaction, song_title, new_key)
+            elif action.value == "approve":
+                await self._handle_approve(interaction, song_title)
 
         @jambot_chart.error
         async def chart_error(interaction: discord.Interaction, error):
@@ -202,6 +207,7 @@ class ChartCommands:
             'chart_title': chart.get('chart_title') or chart['title'],
             'keys': chart['keys'],
             'lyrics': chart.get('lyrics'),
+            'status': chart.get('status', 'draft'),
         }
 
         # Transpose if a different key was requested
@@ -216,8 +222,9 @@ class ChartCommands:
         filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
         file = discord.File(fp=pdf_buf, filename=filename)
 
+        status_msg = " **(DRAFT)**" if chart_data['status'] == 'draft' else ""
         await interaction.followup.send(
-            f"**{chart['title']}** — Key of {display_key}",
+            f"**{chart['title']}** — Key of {display_key}{status_msg}",
             file=file,
         )
 
@@ -295,6 +302,7 @@ class ChartCommands:
             'chart_title': chart.get('chart_title') or chart['title'],
             'keys': [transposed],
             'lyrics': chart.get('lyrics'),
+            'status': chart.get('status', 'draft'),
         }
         pdf_buf = generate_chart_pdf(chart_data)
         filename = f"{chart['title'].replace(' ', '_')}_{new_key}.pdf"
@@ -302,6 +310,68 @@ class ChartCommands:
 
         await interaction.followup.send(
             f"Added Key of {new_key} to **{chart['title']}**.",
+            file=file,
+        )
+
+    async def _handle_approve(
+        self, interaction: discord.Interaction, song_title: Optional[str]
+    ):
+        """Approve a draft chord chart."""
+        if not song_title:
+            await interaction.response.send_message(
+                "Please provide a song title to approve.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(thinking=True)
+
+        # Check if user is an approver
+        config = self.db.get_bot_configuration(interaction.guild_id)
+        approver_ids = config.get('approver_ids', []) if config else []
+        if interaction.user.id not in approver_ids:
+            await interaction.followup.send(
+                "You do not have permission to approve chord charts.", ephemeral=True
+            )
+            return
+
+        # Get chart
+        chart = self.db.get_chord_chart(interaction.guild_id, song_title)
+        if not chart:
+            charts = self.db.search_chord_charts(interaction.guild_id, song_title)
+            if charts:
+                chart = charts[0]
+            else:
+                await interaction.followup.send(
+                    f"No chord chart found for \"{song_title}\".", ephemeral=True
+                )
+                return
+
+        # Check if already approved
+        if chart.get('status') == 'approved':
+            await interaction.followup.send(
+                f"**{chart['title']}** is already approved.", ephemeral=True
+            )
+            return
+
+        # Approve the chart
+        self.db.update_chord_chart_status(
+            interaction.guild_id, chart['title'], 'approved', interaction.user.id
+        )
+
+        # Generate approved PDF
+        chart_data = {
+            'title': chart['title'],
+            'chart_title': chart.get('chart_title') or chart['title'],
+            'keys': chart['keys'],
+            'lyrics': chart.get('lyrics'),
+            'status': 'approved',
+        }
+        pdf_buf = generate_chart_pdf(chart_data)
+        filename = f"{chart['title'].replace(' ', '_')}.pdf"
+        file = discord.File(fp=pdf_buf, filename=filename)
+
+        await interaction.followup.send(
+            f"**{chart['title']}** has been approved by <@{interaction.user.id}>.",
             file=file,
         )
 

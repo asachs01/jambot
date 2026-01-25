@@ -249,7 +249,7 @@ def generate_chart_pdf(chart_data: Dict[str, Any]) -> io.BytesIO:
       (vertical lines only, column-major reading order)
 
     Args:
-        chart_data: Dict with title, chart_title, keys, lyrics.
+        chart_data: Dict with title, chart_title, keys, lyrics, status (optional).
 
     Returns:
         BytesIO buffer containing the PDF.
@@ -272,6 +272,7 @@ def generate_chart_pdf(chart_data: Dict[str, Any]) -> io.BytesIO:
     chart_title = chart_data.get('chart_title', title)
     keys = chart_data.get('keys', [])
     lyrics = chart_data.get('lyrics')
+    status = chart_data.get('status', 'draft')
 
     # --- Left Panel: Title + Lyrics ---
     _draw_lyrics_panel(c, margin, margin, panel_w, usable_h, title, lyrics)
@@ -285,6 +286,13 @@ def generate_chart_pdf(chart_data: Dict[str, Any]) -> io.BytesIO:
     # --- Right Panel: Chord Grid ---
     chord_x = margin + panel_w + gap
     _draw_chord_panel(c, chord_x, margin, panel_w, usable_h, chart_title, keys)
+
+    # --- Draft Footer (if draft status) ---
+    if status == 'draft':
+        c.setFillGray(0.5)
+        c.setFont("Helvetica-Bold", 12)
+        footer_y = margin * 0.3
+        c.drawCentredString(page_w / 2, footer_y, "DRAFT")
 
     c.save()
     buf.seek(0)
