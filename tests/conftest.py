@@ -320,6 +320,56 @@ def mock_spotify_client():
     return client
 
 
+@pytest.fixture
+def mock_openrouter_client():
+    """Mock OpenRouterClient instance."""
+    client = MagicMock()
+    client.api_key = 'test-openrouter-key'
+    client.base_url = 'https://openrouter.ai/api/v1'
+    client.primary_model = 'deepseek/deepseek-chat:v3'
+    client.fallback_model = 'meta-llama/llama-3.1-70b-instruct:free'
+    client.current_model = 'deepseek/deepseek-chat:v3'
+    client.max_retries = 3
+
+    # Chat completion method
+    client.chat_completion = AsyncMock(return_value={
+        'content': 'Test response',
+        'metadata': {
+            'prompt_tokens': 10,
+            'completion_tokens': 20,
+            'latency_ms': 50.0,
+            'cost_usd': 0.000007,
+            'model_used': 'deepseek/deepseek-chat:v3',
+        }
+    })
+
+    # Fallback method
+    client._trigger_fallback = MagicMock()
+
+    # Cost calculation method
+    client._calculate_cost = MagicMock(return_value=0.000007)
+
+    # Close method
+    client.close = AsyncMock()
+
+    return client
+
+
+@pytest.fixture
+def sample_openrouter_response():
+    """Sample OpenRouter API response."""
+    return {
+        'content': 'This is a test response from OpenRouter.',
+        'metadata': {
+            'prompt_tokens': 10,
+            'completion_tokens': 20,
+            'latency_ms': 50.0,
+            'cost_usd': 0.000007,
+            'model_used': 'deepseek/deepseek-chat:v3',
+        }
+    }
+
+
 # --- Database Test Fixtures ---
 
 @pytest.fixture

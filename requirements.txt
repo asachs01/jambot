@@ -20,8 +20,12 @@ reportlab==4.1.0
 Flask==3.0.0
 gunicorn==21.2.0
 
+# HTTP Client
+aiohttp==3.10.11
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.24.0
 pytest-cov==6.0.0
 pytest-mock==3.14.0
+pytest-aiohttp==1.0.5
