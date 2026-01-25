@@ -3,7 +3,7 @@ import psycopg2
 import psycopg2.extras
 import json
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from contextlib import contextmanager
 from src.config import Config
 from src.logger import logger
@@ -202,15 +202,8 @@ class Database:
             END IF;
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                           WHERE table_name = 'chord_charts' AND column_name = 'status') THEN
-                ALTER TABLE chord_charts ADD COLUMN status VARCHAR(20) DEFAULT 'draft';
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'chord_charts' AND column_name = 'approved_by') THEN
-                ALTER TABLE chord_charts ADD COLUMN approved_by BIGINT;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'chord_charts' AND column_name = 'approved_at') THEN
-                ALTER TABLE chord_charts ADD COLUMN approved_at TIMESTAMP;
+                ALTER TABLE chord_charts ADD COLUMN status VARCHAR(20) DEFAULT 'pending';
+                CREATE INDEX IF NOT EXISTS idx_chord_charts_status ON chord_charts(guild_id, status);
             END IF;
         END $$;
         """
@@ -639,6 +632,7 @@ class Database:
         created_by: int,
         chart_title: Optional[str] = None,
         lyrics: Optional[List[Dict[str, Any]]] = None,
+        status: str = 'pending',
     ) -> int:
         """Create or update a chord chart.
 
@@ -649,6 +643,7 @@ class Database:
             created_by: Discord user ID.
             chart_title: Optional abbreviated title.
             lyrics: Optional lyrics data.
+            status: Chart status (pending/approved/rejected).
 
         Returns:
             Chart database ID.
@@ -659,12 +654,13 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO chord_charts
-                   (guild_id, title, chart_title, lyrics, keys, created_by)
-                   VALUES (%s, %s, %s, %s, %s, %s)
+                   (guild_id, title, chart_title, lyrics, keys, created_by, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (guild_id, title) DO UPDATE SET
                        chart_title = EXCLUDED.chart_title,
                        lyrics = EXCLUDED.lyrics,
                        keys = EXCLUDED.keys,
+                       status = EXCLUDED.status,
                        updated_at = NOW()
                    RETURNING id""",
                 (
@@ -672,10 +668,11 @@ class Database:
                     json.dumps(lyrics) if lyrics else None,
                     json.dumps(keys),
                     created_by,
+                    status,
                 )
             )
             chart_id = cursor.fetchone()[0]
-            logger.info(f"Created/updated chord chart '{title}' for guild {guild_id}")
+            logger.info(f"Created/updated chord chart '{title}' for guild {guild_id} with status '{status}'")
             return chart_id
 
     def get_chord_chart(self, guild_id: int, title: str) -> Optional[Dict[str, Any]]:
@@ -733,6 +730,51 @@ class Database:
                 (guild_id,)
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def list_chord_charts_filtered(
+        self,
+        guild_id: int,
+        status: Optional[str] = None,
+        limit: int = 10,
+        offset: int = 0
+    ) -> tuple:
+        """List chord charts with optional status filter and pagination.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            status: Filter by status ('pending'|'approved'|'rejected'|None for all).
+            limit: Results per page (default 10).
+            offset: Skip N results (for pagination).
+
+        Returns:
+            Tuple of (chart_list, total_count).
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Build WHERE clause
+            where_clause = "WHERE guild_id = %s"
+            params = [guild_id]
+
+            if status and status != 'all':
+                where_clause += " AND status = %s"
+                params.append(status)
+
+            # Get total count
+            cursor.execute(f"SELECT COUNT(*) as count FROM chord_charts {where_clause}", params)
+            total = cursor.fetchone()['count']
+
+            # Get paginated results
+            query = f"""
+                SELECT id, title, chart_title, status, created_by, created_at
+                FROM chord_charts {where_clause}
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """
+            params.extend([limit, offset])
+            cursor.execute(query, params)
+
+            return [dict(row) for row in cursor.fetchall()], total
 
     def update_chord_chart_keys(
         self, guild_id: int, title: str, keys: List[Dict[str, Any]]

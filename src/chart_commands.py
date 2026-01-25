@@ -116,6 +116,88 @@ class ChartCreateModal(ui.Modal, title="Create Chord Chart"):
             )
 
 
+class ChartListView(ui.View):
+    """Paginated view for chord chart listings."""
+
+    def __init__(self, db, guild_id: int, status: str, total_pages: int, current_page: int = 0):
+        super().__init__(timeout=300)  # 5 min timeout
+        self.db = db
+        self.guild_id = guild_id
+        self.status = status
+        self.total_pages = total_pages
+        self.current_page = current_page
+
+        # Create page selector dropdown
+        if total_pages > 1:
+            options = [
+                discord.SelectOption(
+                    label=f"Page {i+1}",
+                    value=str(i),
+                    default=(i == current_page)
+                )
+                for i in range(min(total_pages, 25))  # Discord limit: 25 options
+            ]
+            self.page_select = ui.Select(
+                placeholder=f"Page {current_page + 1}/{total_pages}",
+                options=options
+            )
+            self.page_select.callback = self.on_page_select
+            self.add_item(self.page_select)
+
+    async def on_page_select(self, interaction: discord.Interaction):
+        """Handle page selection."""
+        new_page = int(self.page_select.values[0])
+        embed = await self.build_embed(new_page)
+
+        # Update view with new page
+        new_view = ChartListView(
+            self.db, self.guild_id, self.status,
+            self.total_pages, new_page
+        )
+        await interaction.response.edit_message(embed=embed, view=new_view)
+
+    async def build_embed(self, page: int = 0) -> discord.Embed:
+        """Build embed for current page."""
+        offset = page * 10
+        charts, total = self.db.list_chord_charts_filtered(
+            self.guild_id, self.status, limit=10, offset=offset
+        )
+
+        status_emoji = {
+            'pending': '⏳',
+            'approved': '✅',
+            'rejected': '❌',
+            'all': '📋'
+        }
+
+        title = f"{status_emoji.get(self.status, '📋')} Chord Charts"
+        if self.status != 'all':
+            title += f" - {self.status.capitalize()}"
+
+        embed = discord.Embed(
+            title=title,
+            description=f"Showing {len(charts)} of {total} charts",
+            color=discord.Color.blue()
+        )
+
+        if not charts:
+            embed.description = "No charts found."
+            return embed
+
+        for chart in charts:
+            status_icon = status_emoji.get(chart.get('status', 'pending'), '❓')
+            creator = f"<@{chart['created_by']}>" if chart.get('created_by') else 'Unknown'
+
+            embed.add_field(
+                name=f"{status_icon} #{chart['id']}: {chart['title']}",
+                value=f"Status: {chart.get('status', 'pending')} | By: {creator}",
+                inline=False
+            )
+
+        embed.set_footer(text=f"Page {page + 1} of {self.total_pages}")
+        return embed
+
+
 class ChartCommands:
     """Discord slash commands for chord chart management."""
 
@@ -171,6 +253,65 @@ class ChartCommands:
                 await interaction.response.send_message(
                     f"An error occurred: {error}", ephemeral=True
                 )
+
+        @self.tree.command(
+            name="jambot-chart-list",
+            description="List chord charts with filtering and pagination (Admin only)"
+        )
+        @app_commands.describe(
+            status="Filter by approval status"
+        )
+        @app_commands.choices(status=[
+            app_commands.Choice(name="All", value="all"),
+            app_commands.Choice(name="Pending Approval", value="pending"),
+            app_commands.Choice(name="Approved", value="approved"),
+            app_commands.Choice(name="Rejected", value="rejected"),
+        ])
+        @app_commands.checks.has_permissions(administrator=True)
+        async def jambot_chart_list(
+            interaction: discord.Interaction,
+            status: app_commands.Choice[str] = None
+        ):
+            """List chord charts with pagination and filtering."""
+            await interaction.response.defer(thinking=True)
+
+            # Default to 'all' if no status specified
+            status_value = status.value if status else 'all'
+
+            # Get total count and first page
+            charts, total = self.db.list_chord_charts_filtered(
+                interaction.guild_id, status_value, limit=10, offset=0
+            )
+
+            total_pages = (total + 9) // 10  # Ceiling division
+
+            # Create view with pagination
+            view = ChartListView(
+                self.db, interaction.guild_id, status_value,
+                total_pages, current_page=0
+            )
+
+            # Build initial embed
+            embed = await view.build_embed(0)
+
+            await interaction.followup.send(embed=embed, view=view)
+
+        @jambot_chart_list.error
+        async def chart_list_error(interaction: discord.Interaction, error):
+            """Handle command errors."""
+            logger.error(f"Chart list command error: {error}", exc_info=True)
+
+            if isinstance(error, app_commands.errors.MissingPermissions):
+                await interaction.response.send_message(
+                    "❌ You need administrator permissions to use this command.",
+                    ephemeral=True
+                )
+            else:
+                msg = f"An error occurred: {error}"
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
 
     async def _handle_create(self, interaction: discord.Interaction):
         """Open the chord chart creation modal."""
