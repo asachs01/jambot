@@ -91,10 +91,10 @@ class ChartCreateModal(ui.Modal, title="Create Chord Chart"):
             self.db.create_chord_chart(
                 guild_id=interaction.guild_id,
                 title=chart_data['title'],
-                chart_title=chart_data.get('chart_title'),
+                artist=chart_data.get('chart_title'),
                 lyrics=chart_data.get('lyrics'),
                 keys=chart_data['keys'],
-                created_by=interaction.user.id,
+                requested_by=interaction.user.id,
             )
 
             # Generate PDF

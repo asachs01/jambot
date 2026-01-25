@@ -361,3 +361,40 @@ def clean_env():
         os.environ[key] = value
 
     yield
+
+
+@pytest.fixture
+def migrated_test_db():
+    """Create temporary PostgreSQL database with Alembic migrations applied.
+
+    This fixture is provided for tests that need a real PostgreSQL database
+    with the full schema created via Alembic migrations instead of
+    Database._initialize_schema().
+
+    Note: Requires a PostgreSQL server accessible at the DATABASE_URL
+    environment variable or uses the default test database URL.
+    """
+    from pathlib import Path
+    from alembic.config import Config as AlembicConfig
+    from alembic import command
+    import psycopg2
+
+    # Get database URL from environment
+    db_url = os.environ.get('DATABASE_URL', 'postgresql://test:test@localhost:5432/test')
+
+    # Run migrations
+    project_root = Path(__file__).parent.parent
+    alembic_cfg = AlembicConfig(str(project_root / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(project_root / "alembic"))
+    alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+
+    # Apply migrations
+    command.upgrade(alembic_cfg, "head")
+
+    # Provide connection
+    conn = psycopg2.connect(db_url)
+    yield conn
+
+    # Cleanup: rollback migrations and close connection
+    conn.close()
+    command.downgrade(alembic_cfg, "base")

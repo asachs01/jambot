@@ -155,21 +155,6 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_feedback_guild_id ON feedback(guild_id);
         CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
         CREATE INDEX IF NOT EXISTS idx_usage_stats_guild_event ON usage_stats(guild_id, event_type, event_date);
-
-        CREATE TABLE IF NOT EXISTS chord_charts (
-            id SERIAL PRIMARY KEY,
-            guild_id BIGINT NOT NULL,
-            title TEXT NOT NULL,
-            chart_title TEXT,
-            lyrics JSONB,
-            keys JSONB NOT NULL,
-            created_by BIGINT NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(guild_id, title)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_chord_charts_guild_title ON chord_charts(guild_id, title);
         """
 
         # Migration for existing databases: add setlist pattern columns if they don't exist
@@ -624,8 +609,8 @@ class Database:
         guild_id: int,
         title: str,
         keys: List[Dict[str, Any]],
-        created_by: int,
-        chart_title: Optional[str] = None,
+        requested_by: int,
+        artist: Optional[str] = None,
         lyrics: Optional[List[Dict[str, Any]]] = None,
     ) -> int:
         """Create or update a chord chart.
@@ -634,8 +619,8 @@ class Database:
             guild_id: Discord guild (server) ID.
             title: Song title.
             keys: List of key entry dicts.
-            created_by: Discord user ID.
-            chart_title: Optional abbreviated title.
+            requested_by: Discord user ID who requested the chart.
+            artist: Optional artist name.
             lyrics: Optional lyrics data.
 
         Returns:
@@ -647,19 +632,18 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO chord_charts
-                   (guild_id, title, chart_title, lyrics, keys, created_by)
+                   (guild_id, title, artist, lyrics, keys, requested_by)
                    VALUES (%s, %s, %s, %s, %s, %s)
                    ON CONFLICT (guild_id, title) DO UPDATE SET
-                       chart_title = EXCLUDED.chart_title,
+                       artist = EXCLUDED.artist,
                        lyrics = EXCLUDED.lyrics,
-                       keys = EXCLUDED.keys,
-                       updated_at = NOW()
+                       keys = EXCLUDED.keys
                    RETURNING id""",
                 (
-                    guild_id, title, chart_title,
+                    guild_id, title, artist,
                     json.dumps(lyrics) if lyrics else None,
                     json.dumps(keys),
-                    created_by,
+                    requested_by,
                 )
             )
             chart_id = cursor.fetchone()[0]
@@ -737,7 +721,7 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE chord_charts SET keys = %s, updated_at = NOW() WHERE guild_id = %s AND title = %s",
+                "UPDATE chord_charts SET keys = %s WHERE guild_id = %s AND title = %s",
                 (json.dumps(keys), guild_id, title)
             )
             logger.info(f"Updated keys for chart '{title}' in guild {guild_id}")
@@ -1091,3 +1075,127 @@ class Database:
             """, (workflow_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    # --- Generation History Methods ---
+
+    def record_chart_generation(
+        self,
+        chart_id: int,
+        model_used: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        latency_ms: int,
+        cost_usd: float
+    ) -> int:
+        """Record AI generation metrics for a chord chart.
+
+        Args:
+            chart_id: Chord chart database ID.
+            model_used: Name of the AI model used.
+            prompt_tokens: Number of prompt tokens consumed.
+            completion_tokens: Number of completion tokens generated.
+            latency_ms: Generation latency in milliseconds.
+            cost_usd: Cost of generation in USD.
+
+        Returns:
+            Generation history record ID.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO generation_history
+                   (chart_id, model_used, prompt_tokens, completion_tokens, latency_ms, cost_usd)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   RETURNING id""",
+                (chart_id, model_used, prompt_tokens, completion_tokens, latency_ms, cost_usd)
+            )
+            history_id = cursor.fetchone()[0]
+            logger.info(f"Recorded generation history {history_id} for chart {chart_id}")
+            return history_id
+
+    def get_chart_generation_history(self, chart_id: int) -> List[Dict[str, Any]]:
+        """Retrieve generation history for a specific chart.
+
+        Args:
+            chart_id: Chord chart database ID.
+
+        Returns:
+            List of generation history records ordered by creation time.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """SELECT * FROM generation_history
+                   WHERE chart_id = %s
+                   ORDER BY created_at DESC""",
+                (chart_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_generation_stats(
+        self,
+        guild_id: Optional[int] = None,
+        days: int = 30
+    ) -> Dict[str, Any]:
+        """Aggregate generation statistics.
+
+        Args:
+            guild_id: Optional guild ID to filter statistics.
+            days: Number of days to include in statistics (default 30).
+
+        Returns:
+            Dictionary with aggregated statistics:
+                - total_generations: Total number of generations
+                - total_cost_usd: Total cost in USD
+                - total_prompt_tokens: Total prompt tokens
+                - total_completion_tokens: Total completion tokens
+                - avg_latency_ms: Average latency in milliseconds
+                - by_model: Breakdown by model name
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Build query with optional guild filter
+            base_query = """
+                SELECT
+                    COUNT(*) as total_generations,
+                    SUM(cost_usd) as total_cost_usd,
+                    SUM(prompt_tokens) as total_prompt_tokens,
+                    SUM(completion_tokens) as total_completion_tokens,
+                    AVG(latency_ms) as avg_latency_ms
+                FROM generation_history gh
+                JOIN chord_charts cc ON gh.chart_id = cc.id
+                WHERE gh.created_at >= NOW() - make_interval(days => %s)
+            """
+
+            params = [days]
+            if guild_id is not None:
+                base_query += " AND cc.guild_id = %s"
+                params.append(guild_id)
+
+            cursor.execute(base_query, params)
+            stats = dict(cursor.fetchone())
+
+            # Get per-model breakdown
+            model_query = """
+                SELECT
+                    model_used,
+                    COUNT(*) as generations,
+                    SUM(cost_usd) as cost_usd,
+                    AVG(latency_ms) as avg_latency_ms
+                FROM generation_history gh
+                JOIN chord_charts cc ON gh.chart_id = cc.id
+                WHERE gh.created_at >= NOW() - make_interval(days => %s)
+            """
+
+            model_params = [days]
+            if guild_id is not None:
+                model_query += " AND cc.guild_id = %s"
+                model_params.append(guild_id)
+
+            model_query += " GROUP BY model_used ORDER BY generations DESC"
+
+            cursor.execute(model_query, model_params)
+            stats['by_model'] = [dict(row) for row in cursor.fetchall()]
+
+            return stats
