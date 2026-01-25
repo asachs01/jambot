@@ -58,6 +58,32 @@ class Config:
     # Discord user ID to receive feedback notifications via DM
     FEEDBACK_NOTIFY_USER_ID = os.getenv('FEEDBACK_NOTIFY_USER_ID')
 
+    # AI Chord Chart Generation Configuration
+    # OpenRouter API key for LLM access
+    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+
+    # AI model configuration (OpenRouter model identifiers)
+    CHORD_CHART_PRIMARY_MODEL = os.getenv('CHORD_CHART_PRIMARY_MODEL', 'deepseek/deepseek-chat')
+    CHORD_CHART_FALLBACK_MODEL = os.getenv('CHORD_CHART_FALLBACK_MODEL', 'meta-llama/llama-3.1-70b-instruct')
+    CHORD_CHART_PREMIUM_MODEL = os.getenv('CHORD_CHART_PREMIUM_MODEL', 'anthropic/claude-3.5-haiku')
+
+    # Custom system prompt for chart generation (optional - uses default if not set)
+    CHORD_CHART_SYSTEM_PROMPT = os.getenv('CHORD_CHART_SYSTEM_PROMPT')
+
+    # Few-shot examples in JSON format (optional)
+    CHORD_CHART_EXAMPLES = os.getenv('CHORD_CHART_EXAMPLES')
+
+    # Rate limiting
+    CHORD_CHART_USER_LIMIT = int(os.getenv('CHORD_CHART_USER_LIMIT', '10'))  # per user per day
+    CHORD_CHART_SERVER_LIMIT = int(os.getenv('CHORD_CHART_SERVER_LIMIT', '50'))  # per server per day
+    CHORD_CHART_COOLDOWN = int(os.getenv('CHORD_CHART_COOLDOWN', '30'))  # seconds between requests
+
+    # Premium API Configuration
+    # Base URL for the premium chord chart generation service
+    PREMIUM_API_BASE_URL = os.getenv('PREMIUM_API_BASE_URL', 'https://api.premium.jambot.io')
+    # Timeout in seconds for premium API requests (generation can take time)
+    PREMIUM_API_TIMEOUT = int(os.getenv('PREMIUM_API_TIMEOUT', '60'))
+
     @classmethod
     def validate(cls):
         """Validate that all required configuration is present.

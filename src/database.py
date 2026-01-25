@@ -200,6 +200,24 @@ class Database:
                           WHERE table_name = 'active_workflows' AND column_name = 'initiated_by') THEN
                 ALTER TABLE active_workflows ADD COLUMN initiated_by BIGINT;
             END IF;
+
+            -- Premium API configuration columns
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_api_token_hash') THEN
+                ALTER TABLE bot_configuration ADD COLUMN premium_api_token_hash VARCHAR(72);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_enabled') THEN
+                ALTER TABLE bot_configuration ADD COLUMN premium_enabled BOOLEAN DEFAULT FALSE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_setup_by') THEN
+                ALTER TABLE bot_configuration ADD COLUMN premium_setup_by BIGINT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_setup_at') THEN
+                ALTER TABLE bot_configuration ADD COLUMN premium_setup_at TIMESTAMP;
+            END IF;
         END $$;
         """
 
@@ -741,6 +759,112 @@ class Database:
                 (json.dumps(keys), guild_id, title)
             )
             logger.info(f"Updated keys for chart '{title}' in guild {guild_id}")
+
+    # --- Premium Configuration Methods ---
+
+    def save_premium_config(
+        self,
+        guild_id: int,
+        token_hash: str,
+        setup_by: int
+    ) -> bool:
+        """Save premium API configuration for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            token_hash: Bcrypt hash of the premium API token.
+            setup_by: Discord user ID who set up premium.
+
+        Returns:
+            True if successful, False if guild has no bot configuration.
+        """
+        # Check if configuration exists
+        config = self.get_bot_configuration(guild_id)
+        if not config:
+            logger.warning(f"Cannot save premium config: no bot configuration found for guild {guild_id}")
+            return False
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE bot_configuration
+                   SET premium_api_token_hash = %s,
+                       premium_enabled = TRUE,
+                       premium_setup_by = %s,
+                       premium_setup_at = NOW(),
+                       updated_at = NOW()
+                   WHERE guild_id = %s""",
+                (token_hash, setup_by, guild_id)
+            )
+            logger.info(f"Saved premium configuration for guild {guild_id}")
+            return True
+
+    def get_premium_config(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get premium configuration for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            Dictionary with premium config data if found, None otherwise.
+            Keys: 'premium_api_token_hash', 'premium_enabled', 'premium_setup_by', 'premium_setup_at'
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """SELECT premium_api_token_hash, premium_enabled,
+                          premium_setup_by, premium_setup_at
+                   FROM bot_configuration WHERE guild_id = %s""",
+                (guild_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def is_premium_enabled(self, guild_id: int) -> bool:
+        """Check if premium is enabled for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            True if premium is enabled, False otherwise.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT premium_enabled FROM bot_configuration WHERE guild_id = %s",
+                (guild_id,)
+            )
+            row = cursor.fetchone()
+            if row and row[0]:
+                return True
+            return False
+
+    def disable_premium(self, guild_id: int) -> bool:
+        """Disable premium for a guild (keeps token hash for potential re-enable).
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            True if successful, False if guild has no bot configuration.
+        """
+        config = self.get_bot_configuration(guild_id)
+        if not config:
+            return False
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE bot_configuration
+                   SET premium_enabled = FALSE, updated_at = NOW()
+                   WHERE guild_id = %s""",
+                (guild_id,)
+            )
+            logger.info(f"Disabled premium for guild {guild_id}")
+            return True
 
     def save_workflow(self, workflow_data: Dict, summary_message_id: int) -> None:
         """Save or update workflow to database.
