@@ -25,3 +25,8 @@ pytest==8.3.4
 pytest-asyncio==0.24.0
 pytest-cov==6.0.0
 pytest-mock==3.14.0
+
+# LLM Prompt Generation
+pydantic>=2.0.0
+jinja2>=3.1.0
+tiktoken>=0.5.0
