@@ -200,6 +200,18 @@ class Database:
                           WHERE table_name = 'active_workflows' AND column_name = 'initiated_by') THEN
                 ALTER TABLE active_workflows ADD COLUMN initiated_by BIGINT;
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'chord_charts' AND column_name = 'status') THEN
+                ALTER TABLE chord_charts ADD COLUMN status VARCHAR(20) DEFAULT 'draft';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'chord_charts' AND column_name = 'approved_by') THEN
+                ALTER TABLE chord_charts ADD COLUMN approved_by BIGINT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'chord_charts' AND column_name = 'approved_at') THEN
+                ALTER TABLE chord_charts ADD COLUMN approved_at TIMESTAMP;
+            END IF;
         END $$;
         """
 
@@ -741,6 +753,73 @@ class Database:
                 (json.dumps(keys), guild_id, title)
             )
             logger.info(f"Updated keys for chart '{title}' in guild {guild_id}")
+
+    def update_chord_chart_status(
+        self,
+        guild_id: int,
+        title: str,
+        status: str,
+        approved_by: Optional[int] = None
+    ):
+        """Update the status of a chord chart.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            title: Song title.
+            status: New status ('draft', 'approved', 'archived').
+            approved_by: User ID who approved (if status is 'approved').
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if status == 'approved' and approved_by is not None:
+                cursor.execute(
+                    """UPDATE chord_charts
+                       SET status = %s, approved_by = %s, approved_at = NOW(), updated_at = NOW()
+                       WHERE guild_id = %s AND title = %s""",
+                    (status, approved_by, guild_id, title)
+                )
+            else:
+                cursor.execute(
+                    """UPDATE chord_charts
+                       SET status = %s, updated_at = NOW()
+                       WHERE guild_id = %s AND title = %s""",
+                    (status, guild_id, title)
+                )
+            logger.info(f"Updated status to '{status}' for chart '{title}' in guild {guild_id}")
+
+    def get_draft_charts(self, guild_id: int) -> List[Dict[str, Any]]:
+        """List all draft chord charts for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            List of draft chart dicts.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM chord_charts WHERE guild_id = %s AND status = 'draft' ORDER BY title",
+                (guild_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_approved_charts(self, guild_id: int) -> List[Dict[str, Any]]:
+        """List all approved chord charts for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            List of approved chart dicts.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM chord_charts WHERE guild_id = %s AND status = 'approved' ORDER BY title",
+                (guild_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
 
     def save_workflow(self, workflow_data: Dict, summary_message_id: int) -> None:
         """Save or update workflow to database.

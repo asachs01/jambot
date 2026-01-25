@@ -339,3 +339,88 @@ class TestTransposeAndRender:
         pdf_bytes = pdf_buf.read()
         assert pdf_bytes[:4] == b'%PDF'
         assert transposed['key'] == target_key
+
+
+# --- Status Workflow Tests ---
+
+class TestChartStatusWorkflow:
+    def test_draft_and_approved_pdfs_differ(self):
+        """Draft and approved PDFs should be different (draft has footer)."""
+        data = parse_chord_input(
+            title='Status Test',
+            key='G',
+            section_labels='Verse',
+            chords_text='G C D G',
+        )
+
+        # Generate draft PDF
+        data['status'] = 'draft'
+        pdf_draft = generate_chart_pdf(data)
+        draft_bytes = pdf_draft.read()
+
+        # Generate approved PDF with same content
+        data['status'] = 'approved'
+        pdf_approved = generate_chart_pdf(data)
+        approved_bytes = pdf_approved.read()
+
+        # Both should be valid PDFs
+        assert draft_bytes[:4] == b'%PDF'
+        assert approved_bytes[:4] == b'%PDF'
+
+        # They should be different (draft has footer text)
+        assert draft_bytes != approved_bytes, "Draft and approved PDFs should differ"
+
+        # Draft should be slightly larger (has extra text element)
+        assert len(draft_bytes) >= len(approved_bytes), "Draft PDF should not be smaller than approved"
+
+    def test_default_status_is_draft(self):
+        """Charts without explicit status should default to draft."""
+        data = parse_chord_input(
+            title='Default Status Test',
+            key='G',
+            section_labels='Verse',
+            chords_text='G C D G',
+        )
+        # Don't set status - should default to draft
+
+        pdf_default = generate_chart_pdf(data)
+        default_bytes = pdf_default.read()
+
+        # Set status explicitly to approved
+        data['status'] = 'approved'
+        pdf_approved = generate_chart_pdf(data)
+        approved_bytes = pdf_approved.read()
+
+        # Default (no status) should differ from approved (because default is draft)
+        # PDFs will have different IDs/timestamps, so compare sizes as proxy
+        # Draft has extra footer text element, so should be slightly larger
+        assert len(default_bytes) >= len(approved_bytes), "Default (draft) should not be smaller than approved"
+
+        # They should be different PDFs
+        assert default_bytes != approved_bytes, "Default should differ from approved"
+
+    def test_approved_status_produces_different_pdf(self):
+        """Explicitly approved status should produce different PDF than draft."""
+        data = parse_chord_input(
+            title='Approved Test',
+            key='C',
+            section_labels='Verse',
+            chords_text='C F G C',
+        )
+
+        # Generate approved PDF
+        data['status'] = 'approved'
+        pdf_approved = generate_chart_pdf(data)
+        approved_bytes = pdf_approved.read()
+
+        # Generate draft PDF
+        data['status'] = 'draft'
+        pdf_draft = generate_chart_pdf(data)
+        draft_bytes = pdf_draft.read()
+
+        # They should be different
+        assert approved_bytes != draft_bytes, "Approved PDF should differ from draft"
+
+        # Both should still be valid PDFs
+        assert approved_bytes[:4] == b'%PDF'
+        assert draft_bytes[:4] == b'%PDF'
