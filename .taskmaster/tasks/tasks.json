@@ -62,8 +62,9 @@
           "3",
           "4"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:11:58.283Z"
       },
       {
         "id": "6",
@@ -216,7 +217,7 @@
             "updatedAt": "2025-11-17T14:32:38.964Z"
           }
         ],
-        "updatedAt": "2025-11-17T14:32:38.964Z"
+        "updatedAt": "2026-01-25T16:19:20.838Z"
       },
       {
         "id": "12",
@@ -296,16 +297,637 @@
         "priority": "medium",
         "subtasks": [],
         "updatedAt": "2026-01-19T03:28:02.127Z"
+      },
+      {
+        "id": "17",
+        "title": "Create Premium API Repository Structure",
+        "description": "Initialize FastAPI project structure with Poetry dependency management, Docker configuration, and environment variables for PostgreSQL, OpenRouter, and Stripe.",
+        "details": "Create `jambot-premium-api` repo with `pyproject.toml` using Poetry, `src/main.py` FastAPI app, `src/config.py` for env vars (POSTGRES_URL, OPENROUTER_API_KEY, STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY), `Dockerfile` with Python 3.12-slim, `docker-compose.yml` with postgres:16 service, `.env.example`, and `.gitignore` excluding .env and __pycache__.",
+        "testStrategy": "Verify project structure exists, `poetry install` succeeds, `docker-compose up` starts services without errors, env vars load correctly from config.py.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "18",
+        "title": "Design and Implement Premium API Database Schema",
+        "description": "Create PostgreSQL tables for tenants, credits, credit_transactions, generation_history, products using Alembic migrations with indexes and connection pooling.",
+        "details": "Use SQLAlchemy with asyncpg for pooling. Implement exact schema: tenants (UUID PK, discord_guild_id unique, api_token_hash bcrypt, api_token_prefix), credits (balance default 5), credit_transactions, generation_history (UUID PK), products. Add indexes on tenant_id, api_token_prefix, created_at. Generate Alembic migration: `alembic revision --autogenerate -m 'initial_schema'`, `alembic upgrade head`.",
+        "testStrategy": "Run migrations, verify table schemas with `psql \\d`, test insert/select on each table, confirm indexes exist, validate foreign keys and defaults.",
+        "priority": "high",
+        "dependencies": [
+          "17"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "19",
+        "title": "Implement API Token Generation and Validation",
+        "description": "Create secure token generation with bcrypt hashing, 8-char prefix lookup, and validation endpoints with rate limiting.",
+        "details": "Use `secrets.token_bytes(32)` for token secret, base64url encode, prefix first 8 chars. Store bcrypt.hashpw(token.encode(), bcrypt.gensalt()). Implement `POST /api/v1/tokens/generate` (internal, returns `jbp_{prefix}_{secret}`), `POST /api/v1/validate` (lookup prefix, verify hash). Use slowapi for rate limiting (100/hour per IP).",
+        "testStrategy": "Generate token, validate succeeds, invalid token fails, prefix lookup <1ms, rate limit triggers after 100 calls, bcrypt hash verifies correctly.",
+        "priority": "high",
+        "dependencies": [
+          "18"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "20",
+        "title": "Implement Credit Management System",
+        "description": "Build atomic credit deduction, addition, balance queries with transaction logging supporting trial and purchased credits.",
+        "details": "Use SQLAlchemy transactions: `deduct_credit`: check balance>=1 and trial_used<5 or balance>0, insert transaction, update credits atomically. `add_credits`: update lifetime_purchased, balance. `get_balance`: sum available. Trial logic: if trial_used<5 and balance>0 use trial first. Log all in credit_transactions.",
+        "testStrategy": "Test atomicity (deduct when insufficient fails), trial limits (max 5), concurrent deductions don't overspend, transaction logs match balance changes.",
+        "priority": "high",
+        "dependencies": [
+          "18"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "21",
+        "title": "Implement AI Chord Chart Generation Endpoint",
+        "description": "Create POST /api/v1/generate endpoint with token validation, credit check, OpenRouter DeepSeek V3 call, structured response.",
+        "details": "Extract token from Authorization: Bearer, validate_token(), check_credits()>0, deduct_credit(). POST to OpenRouter /api/v1/chat/completions with model='deepseek/deepseek-chat-v3', parse response to chart.sections/lyrics structure. Log to generation_history (tokens from usage, latency=time.perf_counter()). Return chart or insufficient_credits with purchase_url.",
+        "testStrategy": "Mock OpenRouter/stripe, test success flow deducts credit, insufficient returns error, invalid token 401, parse malformed LLM response gracefully.",
+        "priority": "high",
+        "dependencies": [
+          "19",
+          "20"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "22",
+        "title": "Implement Credits Query Endpoint",
+        "description": "Create GET /api/v1/credits to return credits_remaining, trial_credits_remaining, lifetime_purchased.",
+        "details": "Validate token, query credits table: credits_remaining=balance-trial_used (if trial_used<5 else 0), trial_remaining=max(5-trial_used,0), lifetime_purchased. Cache result 30s with Redis if added later.",
+        "testStrategy": "Test with valid token returns correct breakdown, invalid token 401, trial/purchased scenarios match calculations.",
+        "priority": "medium",
+        "dependencies": [
+          "19",
+          "20"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "23",
+        "title": "Set Up Stripe Products and Prices",
+        "description": "Create Stripe products for 10/25/50 credit packs and store in products table.",
+        "details": "In Stripe dashboard (test mode): create products 'JamBot Credits - 10 Pack' ($4.99, metadata={'credits':10}), 25 Pack ($9.99,25), 50 Pack ($17.99,50). Insert into products table: id='10pack', stripe_product_id, stripe_price_id, credits=10, price_cents=499, is_active=true.",
+        "testStrategy": "Verify products exist in Stripe dashboard, products table populated correctly, price/credit mapping accurate.",
+        "priority": "high",
+        "dependencies": [
+          "18"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "24",
+        "title": "Implement Stripe Checkout Session Creation",
+        "description": "Create POST /api/v1/checkout to generate Stripe Checkout URL with guild metadata.",
+        "details": "Validate token, get tenant.stripe_customer_id or stripe.customers.create(email=f'{guild_name} Premium'), stripe.checkout.sessions.create(line_items=[{'price': product.stripe_price_id, 'quantity':1}], mode='payment', metadata={'guild_id': guild_id}, success_url/cancel_url). Return session.url.",
+        "testStrategy": "Mock stripe lib, test creates customer if missing, session.url valid, metadata includes guild_id, handles invalid product_id.",
+        "priority": "high",
+        "dependencies": [
+          "19",
+          "23"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "25",
+        "title": "Implement Stripe Webhook Handler",
+        "description": "Create POST /webhook/stripe to handle checkout.session.completed, add credits idempotently.",
+        "details": "Verify signature stripe.WebhookSignature.verify_header(payload, sig_header, STRIPE_WEBHOOK_SECRET). For 'checkout.session.completed': guild_id=event.data.object.metadata.guild_id, lookup tenant, product=lookup by price_id, add_credits(amount=product.credits, stripe_payment_id=event.id). Idempotency via unique stripe_payment_id constraint.",
+        "testStrategy": "Use stripe-cli to simulate webhook, verify signature passes/fails, credits added once, duplicate event ignored, invalid guild_id handled.",
+        "priority": "high",
+        "dependencies": [
+          "20",
+          "23"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "26",
+        "title": "Add Premium Configuration to Bot Database",
+        "description": "Extend JamBot bot_configuration table with premium_api_token_hash, premium_enabled, premium_setup_by, premium_setup_at.",
+        "details": "Run ALTER TABLE bot_configuration ADD COLUMN premium_api_token_hash VARCHAR(72), ADD premium_enabled BOOLEAN DEFAULT FALSE, ADD premium_setup_by BIGINT, ADD premium_setup_at TIMESTAMP. Implement asyncpg functions save_premium_config(guild_id, token_hash, setup_by), get_premium_config(guild_id), is_premium_enabled(guild_id).",
+        "testStrategy": "Apply schema changes, test insert/retrieve config, hash verification with bcrypt.checkpw, enabled flag updates correctly.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:13:13.273Z"
+      },
+      {
+        "id": "27",
+        "title": "Create Premium API HTTP Client",
+        "description": "Implement PremiumClient class with aiohttp for async API calls: validate_token, get_credits, generate_chart, get_checkout_url.",
+        "details": "class PremiumClient: async def __init__(self, base_url, timeout=30), async validate_token(token), async get_credits(token, guild_id), async generate_chart(token, guild_id, title, artist=None, key=None), async get_checkout_url(token, product_id, guild_id). Use aiohttp.ClientSession with timeout, json response parsing, error mapping (401->'invalid_token').",
+        "testStrategy": "Mock aiohttp responses, test all methods return parsed data, handle timeouts/401/500 errors, retry logic on 5xx.",
+        "priority": "medium",
+        "dependencies": [
+          "26",
+          "43"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:14:48.211Z"
+      },
+      {
+        "id": "28",
+        "title": "Implement Premium Setup Modal and Command",
+        "description": "Add /jambot-premium-setup slash command (admin only) with modal for token input, validation, and config storage.",
+        "details": "Use discord.py app_commands, @app_commands.checks.has_permissions(administrator=True). Modal with TextInput(style=password). On submit: client.validate_token(token), hash=bcrypt.hashpw(token), save_premium_config(guild_id, hash, interaction.user.id), set premium_enabled=True. Ephemeral response with credits.",
+        "testStrategy": "Test command hidden for non-admins, modal validation succeeds/fails, config saved with hash, enabled flag set.",
+        "priority": "medium",
+        "dependencies": [
+          "27"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:16:47.888Z"
+      },
+      {
+        "id": "29",
+        "title": "Implement Credits and Buy Commands",
+        "description": "Add /jambot-credits and /jambot-buy-credits commands with credit display and checkout links.",
+        "details": "/jambot-credits: if premium_enabled, client.get_credits(), embed with balance/trial/purchased, low balance shows buy button. /jambot-buy-credits: View with buttons for 10/25/50 packs, callback generates client.get_checkout_url('10pack'), ephemeral response with URL.",
+        "testStrategy": "Test commands hidden when not premium_enabled, credits display accurate, buy buttons generate valid URLs, low balance messaging.",
+        "priority": "medium",
+        "dependencies": [
+          "27",
+          "28"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:18:11.457Z"
+      },
+      {
+        "id": "30",
+        "title": "Add Premium Gating to Chart Creation",
+        "description": "Modify /jambot-chart create to check premium status, credits, route to premium API if enabled.",
+        "details": "In handle_chart_create: if not is_premium_enabled(guild_id): show 'Premium required' with setup info. else: credits=await client.get_credits(), if credits>0: chart=await client.generate_chart(), store_chart_locally(chart), send PDF, show remaining. else: 'No credits' + buy link.",
+        "testStrategy": "Test gating blocks non-premium, credits check routes correctly, successful generation stores chart and deducts, zero credits shows buy link.",
+        "priority": "high",
+        "dependencies": [
+          "27",
+          "28",
+          "29"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:19:50.023Z"
+      },
+      {
+        "id": "31",
+        "title": "Create Premium API Repository Structure",
+        "description": "Initialize FastAPI project structure with Poetry, Docker, and environment configuration for the closed-source premium service.",
+        "details": "Create `jambot-premium-api` repo. Use Poetry: `poetry init`, add `fastapi`, `uvicorn`, `alembic`, `psycopg2-binary`, `bcrypt`, `python-dotenv`, `stripe`, `openai`, `pydantic`. Create `src/main.py` with FastAPI app, `src/config.py` with Pydantic settings for DATABASE_URL, OPENROUTER_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET. Add Dockerfile with multi-stage build, docker-compose.yml with postgres:15, and .env.example. Implement .gitignore for __pycache__, .env, .venv.",
+        "testStrategy": "Verify Poetry dependencies install, docker-compose up starts services without errors, FastAPI app runs on uvicorn src.main:app --reload, environment variables load correctly from config.py.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:28.543Z"
+      },
+      {
+        "id": "32",
+        "title": "Implement Premium API Database Schema",
+        "description": "Create PostgreSQL tables for tenants, credits, transactions, generation history, and products using Alembic migrations.",
+        "details": "Use SQLAlchemy with asyncpg for connection pooling. Define models matching exact schema: tenants (UUID PK, discord_guild_id unique, api_token_hash bcrypt, api_token_prefix), credits (balance default 5, trial_used), credit_transactions, generation_history (UUID PK), products. Create Alembic env.py with async engine. Add indexes: tenants(discord_guild_id, api_token_prefix), credits(tenant_id), credit_transactions(tenant_id). Run `alembic init migrations`, `alembic revision --autogenerate`, `alembic upgrade head`.",
+        "testStrategy": "Run migrations on test DB, verify table schemas with psql \\d, test insert/select on each table, confirm indexes exist, validate foreign key constraints.",
+        "priority": "high",
+        "dependencies": [
+          "31"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:34.222Z"
+      },
+      {
+        "id": "33",
+        "title": "Implement API Token Generation and Validation",
+        "description": "Create secure token generation and validation system with bcrypt hashing and prefix lookup.",
+        "details": "In `src/auth.py`: def generate_token() -> str: secret = base64.urlsafe_b64encode(os.urandom(32)).decode(), prefix = secret[:8], hash = bcrypt.hashpw(secret.encode(), bcrypt.gensalt()).decode(), store both. Token format: f'jbp_{prefix}_{secret}'. validate_token(token): extract prefix/hash, query DB by prefix, verify bcrypt.checkpw(secret.encode(), stored_hash). Endpoints: POST /api/v1/tokens/generate (internal, returns token), POST /api/v1/validate (returns tenant info). Use fastapi.Depends() for auth.",
+        "testStrategy": "Test token generation produces valid format, DB storage/retrieval, validate_token succeeds/fails correctly, prefix lookup <1ms, rate limiting with slowapi.",
+        "priority": "high",
+        "dependencies": [
+          "32"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:40.522Z"
+      },
+      {
+        "id": "34",
+        "title": "Implement Credit Management System",
+        "description": "Build atomic credit deduction, addition, and balance query functions with transaction logging.",
+        "details": "In `src/credits.py`: async def get_balance(tenant_id): query credits.balance - trial_used. async def deduct_credit(tenant_id, gen_id): WITH transaction: check balance>0, UPDATE credits SET balance-=1, trial_used+=1 if trial, INSERT credit_transactions(type='usage', amount=-1, balance_after=new_balance, generation_id=gen_id). async def add_credits(tenant_id, amount, stripe_id): UPDATE credits lifetime_purchased+=amount, balance+=amount, INSERT transaction(type='purchase'). Use async SQLAlchemy sessions.",
+        "testStrategy": "Test atomicity (deduct/add concurrent), trial limits (max 5), balance queries accurate, all changes logged in transactions table, rollback on failure.",
+        "priority": "high",
+        "dependencies": [
+          "32"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:46.413Z"
+      },
+      {
+        "id": "35",
+        "title": "Implement AI Chord Chart Generation Endpoint",
+        "description": "Create POST /api/v1/generate endpoint with token auth, credit check, OpenRouter integration, and structured response.",
+        "details": "Use Depends(auth), check_credits(). Call OpenRouter: client = AsyncOpenAI(base_url='https://openrouter.ai/api/v1', api_key=config.OPENROUTER_API_KEY), response = await client.chat.completions.create(model='deepseek/deepseek-chat-v3', messages=[{'role':'user', 'content':f'Generate chord chart for {title} by {artist} in {key}'}]). Parse JSON response to Chart model (title, key, sections[], lyrics). Log to generation_history (tokens, cost, latency). Deduct credit on success. Return structured chart + credits_remaining.",
+        "testStrategy": "Mock OpenRouter, test full flow: auth→credit check→generation→deduction→log→response. Test insufficient credits returns purchase_url. Verify structured parsing.",
+        "priority": "high",
+        "dependencies": [
+          "33",
+          "34"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:55.956Z"
+      },
+      {
+        "id": "36",
+        "title": "Implement Credits Query Endpoint",
+        "description": "Create GET /api/v1/credits endpoint returning balance breakdown.",
+        "details": "Auth with Depends(), query credits table: {'credits_remaining': balance-trial_used, 'trial_credits_remaining': 5-trial_used if trial_used<5 else 0, 'lifetime_purchased': lifetime_purchased}. Use Pydantic response model.",
+        "testStrategy": "Test with various balance/trial states, verify auth required, response matches exact schema.",
+        "priority": "medium",
+        "dependencies": [
+          "33",
+          "34"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:07:59.721Z"
+      },
+      {
+        "id": "37",
+        "title": "Set Up Stripe Products and Integrate with Database",
+        "description": "Create Stripe products/prices and populate products table.",
+        "details": "Install stripe: poetry add stripe. In Stripe Dashboard (test mode): create products 'JamBot Credits - 10 Pack' ($4.99, metadata={'credits':10}), 25 Pack ($9.99, credits:25), 50 Pack ($17.99, credits:50). Get price_ids. INSERT into products: ('credit_pack_10', stripe_product_id, stripe_price_id, 10, 499, true), etc. stripe.api_key = config.STRIPE_SECRET_KEY.",
+        "testStrategy": "Verify products table populated correctly, test stripe.Price.retrieve(price_id) returns expected data, product lookup by id works.",
+        "priority": "high",
+        "dependencies": [
+          "32"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:11.205Z"
+      },
+      {
+        "id": "38",
+        "title": "Implement Stripe Checkout Session Creation",
+        "description": "Create POST /api/v1/checkout endpoint generating Stripe Checkout URLs.",
+        "details": "Auth required. Get tenant.stripe_customer_id or stripe.Customer.create(email=f'{guild_name} Premium'). Create session: stripe.checkout.Session.create(customer=customer_id, payment_method_types=['card'], line_items=[{'price': product.stripe_price_id, 'quantity':1}], mode='payment', metadata={'guild_id': guild_id, 'product_id': product_id}, success_url, cancel_url). Return session.url.",
+        "testStrategy": "Mock Stripe, test session creation with/without existing customer, verify metadata includes guild_id, URL returned.",
+        "priority": "high",
+        "dependencies": [
+          "33",
+          "37"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:14.660Z"
+      },
+      {
+        "id": "39",
+        "title": "Implement Stripe Webhook Handler",
+        "description": "Create POST /webhook/stripe endpoint processing checkout.completed events.",
+        "details": "Use stripe.Webhook.construct_event(payload, sig_header, webhook_secret). If 'checkout.session.completed': guild_id=session.metadata.guild_id, product_id=session.metadata.product_id, get credits from products, stripe.Customer.retrieve(session.customer).description for tenant lookup, call add_credits(tenant_id, credits, session.payment_intent). Idempotency: check if stripe_payment_id exists in credit_transactions.",
+        "testStrategy": "Use Stripe CLI forward webhook, test signature verification, credit addition, idempotency (duplicate events), error handling.",
+        "priority": "high",
+        "dependencies": [
+          "34",
+          "37",
+          "38"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:18.668Z"
+      },
+      {
+        "id": "40",
+        "title": "Extend Bot Database for Premium Configuration",
+        "description": "Add premium columns to bot_configuration table and create DB methods.",
+        "details": "Run migration: ALTER TABLE bot_configuration ADD premium_api_token_hash VARCHAR(72), premium_enabled BOOLEAN DEFAULT FALSE, premium_setup_by BIGINT, premium_setup_at TIMESTAMP. Create async def save_premium_config(guild_id, token_hash, setup_by), get_premium_config(guild_id), is_premium_enabled(guild_id). Use bcrypt.hashpw(token, bcrypt.gensalt()).",
+        "testStrategy": "Test migration doesn't break existing data, CRUD operations on new columns, token hashing/verification, premium_enabled toggle.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:22.707Z"
+      },
+      {
+        "id": "41",
+        "title": "Create Premium API HTTP Client",
+        "description": "Implement PremiumClient class with aiohttp for bot integration.",
+        "details": "class PremiumClient: def __init__(self, base_url, timeout=30): self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)), base_url. async validate_token(token), get_credits(token, guild_id), generate_chart(token, guild_id, title, artist, key), get_checkout_url(token, product_id, guild_id). Proper error mapping: APIError, InsufficientCreditsError, etc.",
+        "testStrategy": "Mock aiohttp responses, test all methods with success/error cases, verify timeout handling, proper JSON parsing.",
+        "priority": "medium",
+        "dependencies": [
+          "40"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:26.935Z"
+      },
+      {
+        "id": "42",
+        "title": "Implement Premium Setup Command and Modal",
+        "description": "Add /jambot-premium-setup slash command with token validation modal.",
+        "details": "Create PremiumSetupModal with TextInput(label='API Token', style=password). In callback: client.validate_token(token), hash=bcrypt.hashpw(token.encode(), bcrypt.gensalt()).decode(), save_premium_config(ctx.guild.id, hash, ctx.author.id), set premium_enabled=True. Show credits = await client.get_credits(token, ctx.guild.id). Admin only check.",
+        "testStrategy": "Test command availability (admin only), modal submission, token validation success/fail, DB storage, UI confirmation with credits.",
+        "priority": "medium",
+        "dependencies": [
+          "40",
+          "41"
+        ],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:08:30.275Z"
+      },
+      {
+        "id": "43",
+        "title": "Add Premium Configuration to Bot Config Module",
+        "description": "Update src/config.py to include PREMIUM_API_BASE_URL and PREMIUM_API_TIMEOUT environment variables in the Config class. Add documentation for these variables to .env.example.",
+        "details": "1. Open src/config.py and import os or use existing environment loading mechanism (likely python-dotenv or pydantic-settings). 2. Add two new class attributes to the Config class: self.PREMIUM_API_BASE_URL = os.getenv('PREMIUM_API_BASE_URL', 'https://api.jambot-premium.com') and self.PREMIUM_API_TIMEOUT = int(os.getenv('PREMIUM_API_TIMEOUT', '30')). 3. Ensure these are properly typed (str for base_url, int/float for timeout) and include validation: raise ValueError('PREMIUM_API_TIMEOUT must be positive integer') if timeout <= 0. 4. Update any existing Config initialization to load these new fields. 5. Create or update .env.example in project root: add lines '# Premium API Configuration\nPREMIUM_API_BASE_URL=https://api.jambot-premium.com\nPREMIUM_API_TIMEOUT=30' with clear comments explaining usage (base_url for Premium API endpoint, timeout in seconds for HTTP requests). 6. Ensure config.py handles missing env vars gracefully with sensible defaults. 7. Add docstrings to new config fields explaining their purpose for Premium API integration.",
+        "testStrategy": "1. Verify src/config.py loads PREMIUM_API_BASE_URL and PREMIUM_API_TIMEOUT from environment variables with correct defaults when unset. 2. Set PREMIUM_API_TIMEOUT to invalid values (negative, non-numeric) and confirm ValueError is raised. 3. Test Config instantiation: assert config.PREMIUM_API_BASE_URL == 'https://api.jambot-premium.com' and config.PREMIUM_API_TIMEOUT == 30 with default env. 4. Override env vars and confirm: os.environ['PREMIUM_API_TIMEOUT'] = '60'; new Config().PREMIUM_API_TIMEOUT == 60. 5. Check .env.example contains both variables with comments and example values. 6. Run bot startup to ensure no config loading errors from new fields. 7. Validate no breaking changes to existing config fields.",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T16:11:48.712Z"
+      },
+      {
+        "id": "44",
+        "title": "Update Bot Documentation for Premium Features",
+        "description": "Update key documentation files to include comprehensive guides for premium feature setup, management, configuration variables, and overview.",
+        "details": "1. **docs/configuration.html**: Add a new 'Premium Features Setup' section explaining PREMIUM_API_BASE_URL (default: https://api.jambot-premium.com) and PREMIUM_API_TIMEOUT (default: 30s) environment variables, including setup steps: copy from .env.example, validate with bot restart, and troubleshooting for common errors like invalid timeout values. Include code snippet: `PREMIUM_API_BASE_URL=https://api.jambot-premium.com` and `PREMIUM_API_TIMEOUT=30`. Reference Task 43 for config details. 2. **docs/admin-guide.html**: Create 'Premium Management Guide' section covering /jambot-premium-setup command (admin-only), modal token input process, validation flow, config storage with bcrypt hashing, enabling premium status, and displaying initial credits. Include screenshots or flow diagram of modal submission and success response. Link to premium gating in chart creation (Task 30). 3. **CONFIGURATION.md**: Add 'Premium Environment Variables' subsection under existing config docs, detailing PREMIUM_API_BASE_URL (required for API calls, str type), PREMIUM_API_TIMEOUT (int, validation for positive values), cross-referencing .env.example and src/config.py. Mention dependencies on PremiumClient (Task 27). 4. **README.md**: Insert 'Premium Features' section after core features, highlighting chart generation via premium API, credit-based usage, setup command, gating logic, and upgrade benefits. Add badge or callout: '🚀 Premium: Enhanced charts with AI generation'. Ensure all sections use consistent markdown styling, include links between files, and update any TOCs. Commit with message 'docs: add comprehensive premium features documentation'.",
+        "testStrategy": "1. Verify docs/configuration.html contains 'Premium Features Setup' section with exact env var names, defaults, and code snippets matching Task 43. 2. Confirm docs/admin-guide.html has 'Premium Management Guide' with /jambot-premium-setup details, token flow, and references to Tasks 27-30. 3. Check CONFIGURATION.md 'Premium Environment Variables' subsection lists PREMIUM_API_BASE_URL and PREMIUM_API_TIMEOUT with types/validation. 4. Validate README.md 'Premium Features' section exists with overview, command mention, and links. 5. Build/test HTML files locally (if applicable), ensure no broken links between docs, search for 'premium' keyword yields all 4 files, and review for consistent terminology (e.g., 'PremiumClient', 'validate_token'). 6. Diff against previous versions to confirm only relevant additions, no regressions in existing content.",
+        "status": "pending",
+        "dependencies": [
+          "43",
+          "30",
+          "28",
+          "27"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "45",
+        "title": "Deploy Premium API Service to Production",
+        "description": "Deploy the premium API to a DigitalOcean droplet or app platform, configure PostgreSQL database, set up environment variables, SSL certificate, Stripe webhook endpoint, and monitoring/logging.",
+        "details": "1. Create DigitalOcean Droplet (Ubuntu 22.04, 2GB RAM minimum) or App Platform service for the jambot-premium-api. 2. Install PostgreSQL 16: Add repo `echo 'deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main' > /etc/apt/sources.list.d/pgdg.list`, import key `wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -`, `apt update && apt install postgresql-16 postgresql-contrib`. 3. Configure PostgreSQL: Edit `/etc/postgresql/16/main/postgresql.conf` set `listen_addresses = '*'`, edit `pg_hba.conf` add `host all all 0.0.0.0/0 scram-sha-256`, create user `sudo -u postgres createuser jambot --createdb --pwprompt`, create DB `sudo -u postgres createdb --owner=jambot jambot`, `systemctl restart postgresql`. 4. Deploy app: `git clone` repo, `cd jambot-premium-api`, `poetry install --no-dev --only=main`, copy `.env` with DATABASE_URL=postgresql://jambot:<password>@localhost:5432/jambot, OPENROUTER_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PUBLISHABLE_KEY, set PORT=8000. 5. Run migrations: `poetry run alembic upgrade head`. 6. Start service: Create systemd service `/etc/systemd/system/jambot-premium.service` with `[Unit] Description=JamBot Premium API [Service] WorkingDirectory=/path/to/repo ExecStart=/path/to/.venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2 Restart=always EnvironmentFile=/path/to/.env [Install] WantedBy=multi-user.target`, `systemctl enable --now jambot-premium`. 7. SSL: Use Certbot `apt install certbot python3-certbot-nginx`, `certbot --nginx -d api.jambot-premium.com`. 8. Stripe webhook: Verify endpoint `/stripe/webhook` accessible at https://api.jambot-premium.com/stripe/webhook, configure in Stripe dashboard with STRIPE_WEBHOOK_SECRET. 9. Monitoring: Install Prometheus Node Exporter and Grafana, or use DigitalOcean monitoring; set up logging to `/var/log/jambot-premium.log` with rotation. 10. Firewall: `ufw allow 22,80,443,5432/tcp`. Update bot config with production PREMIUM_API_BASE_URL=https://api.jambot-premium.com.",
+        "testStrategy": "1. Verify droplet/app running, SSH access works. 2. `psql -U jambot -h localhost jambot` connects successfully, run `SELECT 1`. 3. `curl https://api.jambot-premium.com/health` returns 200 OK. 4. Test API endpoints: `/docs` loads Swagger UI, `/validate-token/validtoken` returns 200. 5. Stripe webhook test: Use Stripe CLI `stripe listen --forward-to https://api.jambot-premium.com/stripe/webhook` sends test event, verify logs show receipt. 6. SSL check: `openssl s_client -connect api.jambot-premium.com:443` shows valid cert. 7. Load test: `wrk -t12 -c400 -d30s https://api.jambot-premium.com/health`. 8. Check logs `journalctl -u jambot-premium -f`, confirm no errors. 9. Verify environment vars loaded: API response includes expected config (without secrets). 10. Database migration complete: Check alembic_version table exists.",
+        "status": "pending",
+        "dependencies": [
+          "17",
+          "26",
+          "27",
+          "28",
+          "30",
+          "43"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "46",
+        "title": "End-to-End Testing and Launch Preparation",
+        "description": "Implement comprehensive end-to-end testing for all premium features across free flow, gating, trial, purchase, generation, and metering scenarios, then prepare for production launch.",
+        "details": "1. Create a comprehensive test plan document covering all 6 scenarios: a) Free flow - Test /jambot-chart view succeeds without premium token; b) Gating - /jambot-chart create fails with appropriate error when no valid token; c) Trial - New server gets 5 free generations before metering kicks in; d) Purchase - Test Stripe checkout flow with test cards (use Stripe test keys, simulate 10/25/50 packs via /jambot-buy-credits); e) Generation - Successful AI chart creation via generate_chart API, stored locally in Discord; f) Metering - Verify credits deducted only on successful generation. 2. Set up test environment: Use Stripe test mode keys, create test Discord server, enable premium_config with test token. 3. Implement automated E2E tests using pytest-asyncio + discord.py test client, mocking PremiumClient where needed but testing real API calls to deployed service. 4. Manual testing checklist: Run each scenario step-by-step, capture screenshots/logs, verify database state (credits, configs). 5. Performance testing: Test concurrent chart generations (5+ simultaneous). 6. Launch checklist: Verify Task 45 deployment complete, all tests pass 100%, update .env.example with live Stripe keys instructions, create production rollout plan (canary servers first), set up monitoring alerts for credit deductions and API errors. 7. Documentation: Update README with E2E test instructions, production deployment guide, and troubleshooting for common failures. Use Stripe's recommended test cards (4000000000000002 for declines, 4242424242424242 for success) and Postman collection for API validation.",
+        "testStrategy": "1. Run full automated test suite: pytest tests/e2e/test_premium_flows.py --cov, verify 100% pass rate across all 6 scenarios. 2. Manual validation in test Discord server: Test each flow end-to-end, verify embeds, buttons, API responses, credit balances pre/post. 3. Stripe testing: Use test checkout URLs from /jambot-buy-credits, confirm webhook handling adds credits, test declined cards trigger proper errors. 4. Database verification: Query bot_configuration and credits tables before/after tests, confirm trial credits auto-assigned, deductions only on success. 5. Load test: 10 concurrent /jambot-chart creates, verify no race conditions in metering. 6. Error coverage: Test invalid tokens, insufficient credits, API timeouts, network failures - verify graceful degradation and logging. 7. Production readiness: Smoke test live API endpoints post-Task 45, confirm health checks pass, Stripe webhook endpoint receives test events.",
+        "status": "pending",
+        "dependencies": [
+          "17",
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "43",
+          "45"
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-19T03:28:02.128Z",
-      "taskCount": 16,
-      "completedCount": 6,
+      "lastModified": "2026-01-25T16:19:50.024Z",
+      "taskCount": 46,
+      "completedCount": 13,
       "tags": [
         "master"
       ]
+    }
+  },
+  "enhancement-chord-generator": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Set up PostgreSQL database tables",
+        "description": "Create the chord_charts and generation_history tables exactly as specified in the PRD data model",
+        "details": "Use PostgreSQL 16+ with extensions enabled (pg_trgm for fuzzy matching later). Run SQL migrations using Alembic 1.13.2 (latest as of 2026) integrated with existing Python/Discord.py setup. Exact schema: chord_charts with SERIAL PK id, VARCHAR(255) title/artist, TEXT[] alternate_titles, VARCHAR(10)[] keys, JSONB lyrics/chord_progression, VARCHAR(50) source, VARCHAR(20) status, BIGINT requested_by/approved_by/guild_id, TIMESTAMP created_at/approved_at. generation_history with SERIAL PK id, INTEGER FK chart_id REFERENCES chord_charts(id) ON DELETE CASCADE, VARCHAR(100) model_used, INTEGER prompt_tokens/completion_tokens/latency_ms, DECIMAL(10,6) cost_usd, TIMESTAMP created_at. Add indexes: UNIQUE(title, guild_id), GIN on lyrics/chord_progression, B-tree on status/guild_id. Use psycopg3 3.2.0 (latest binary async driver) for connections.",
+        "testStrategy": "Run migration scripts in test DB, verify table schemas with \\d chord_charts and \\d generation_history, insert sample records and query to confirm FK constraints, indexes, and JSONB operations work. Test with pytest and SQLAlchemy test suite.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T13:10:21.241Z"
+      },
+      {
+        "id": 2,
+        "title": "Integrate OpenRouter API client",
+        "description": "Set up OpenRouter API integration with model fallback and token/cost tracking using env var OPENROUTER_API_KEY",
+        "details": "Use openrouter-python SDK v0.5.0 (latest 2026). Base URL: https://openrouter.ai/api/v1. Primary model: deepseek/deepseek-chat:v3, fallback: meta-llama/llama-3.1-70b-instruct:free. Implement async client with aiohttp 3.10.1. Track prompt_tokens, completion_tokens, latency_ms via response metadata. Calculate cost_usd = (input/1M * 0.14 + output/1M * 0.28) / 1000000 for DeepSeek rates. Add exponential backoff retry with tenacity 9.0.0. Graceful fallback on downtime.",
+        "testStrategy": "Mock API responses with pytest-aiohttp, test token counting with tiktoken 0.7.0 (DeepSeek tokenizer), verify cost calculation accuracy against sample responses, test fallback logic by mocking primary model 500 error.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T13:48:08.666Z"
+      },
+      {
+        "id": 3,
+        "title": "Implement system prompt and few-shot examples",
+        "description": "Create the LLM system prompt with TNBGJ format instructions and 3-5 few-shot examples from existing canon",
+        "details": "Hardcode system prompt as specified: 'You are a bluegrass chord chart generator...' with key elements (output JSON structure, sections A/B/Verse/Chorus, 4-col grids, bluegrass keys G/C/D/A). Embed 3-5 JSON examples matching Appendix C schema (vocal song, fiddle tune, unusual key). Total ~1500 tokens. Use Jinja2 3.1.4 templating for dynamic song/artist insertion. Output must strictly parse as JSON with title/artist/keys/lyrics/chord_progression per schema.",
+        "testStrategy": "Unit test prompt rendering with sample inputs, validate generated JSON against Pydantic v2.9.2 model matching schema, ensure token count <2000 with tiktoken.",
+        "priority": "high",
+        "dependencies": [
+          "2"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T14:52:26.200Z"
+      },
+      {
+        "id": 4,
+        "title": "Implement basic /jambot chart command",
+        "description": "Parse /jambot chart <song_title> [by <artist>], check DB existence, generate via LLM if new, store as draft, show Discord embed preview",
+        "details": "Use discord.py 2.4.0 (latest). Slash command with autocomplete disabled. Parse args with re for 'by Artist'. Query DB: SELECT * FROM chord_charts WHERE LOWER(title) % song_title OR alternate_titles && ARRAY[song_title] (using pg_trgm). If approved: embed with lyrics/chords preview. If pending: status msg. Else: call LLM with prompt, parse JSON (strict mode with Pydantic), insert as status='draft' source='ai_generated', insert generation_history. Preview embed: title/song, fields for sections, chord grids as monospace code blocks.",
+        "testStrategy": "Bot test suite with mock DB/LLM, test parsing edge cases (quotes, no artist, long titles), verify embed rendering, DB insert integrity.",
+        "priority": "high",
+        "dependencies": [
+          "1",
+          "2",
+          "3"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T15:20:52.653Z"
+      },
+      {
+        "id": 5,
+        "title": "Configure approver roles and DM notifications",
+        "description": "Define approver roles in guild config, send DMs with preview/PDF to approvers on new draft",
+        "details": "Add guild config table/JSON cache for approver_role_id. Query members with role. On draft insert, DM each: Embed with song/requester/preview, attach PDF (Phase 3), buttons: View of Primary/Secondary buttons with discord.ui.View (persistent). Use discord.py buttons with custom_id for approve/reject/edit.",
+        "testStrategy": "Mock DMs in test guild, verify button payloads, test role-based filtering.",
+        "priority": "medium",
+        "dependencies": [
+          "4"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Implement reaction/button-based approval workflow",
+        "description": "Handle approve/reject/edit buttons in DMs, update status, notify requester",
+        "details": "discord.py on_interaction for custom_ids 'approve_chart', 'reject_chart', 'edit_chart'. On approve: UPDATE status='approved', approved_by=approver.id, approved_at=NOW(). DM requester: 'Approved!'. On reject: status='rejected', optional reason to history. On edit: modal for corrections (JSON edit). Rate limit with Redis 5.0+ or guild cache.",
+        "testStrategy": "Interaction replay tests, verify DB updates, notification delivery.",
+        "priority": "medium",
+        "dependencies": [
+          "5"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Implement PDF generation with ReportLab",
+        "description": "Generate TNBGJ-format PDFs from chord chart JSON for approval/download",
+        "details": "Use ReportLab 4.2.2 (latest 2026) + reportlab-music-notation if available, else custom canvas. Two-panel layout: left lyrics (section headers, monospace lines), right chord grid (4-col measures, 8-row sections, repeat markers ①②). Chords as bold sans-serif over lyrics positions. Page size A4/letter, bluegrass styling (fonts: Helvetica Bold). Generate on draft/approved, store blob in DB or S3 minio.",
+        "testStrategy": "Generate sample PDFs, visual diff against reference Appendix A, verify parseable JSON -> PDF fidelity.",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "4"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T13:36:47.653Z"
+      },
+      {
+        "id": 8,
+        "title": "Add /jambot chart-list command",
+        "description": "List charts filtered by [status], paginated for admins",
+        "details": "Slash command with string choice param status='pending|approved|rejected|all'. Query with guild_id filter, paginated embeds (10/page) using discord.ui.Select. Show id/title/status/requested_by.",
+        "testStrategy": "Test filtering/pagination with seeded DB data.",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "4"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T13:36:47.658Z"
+      },
+      {
+        "id": 9,
+        "title": "Implement /jambot chart-approve/reject/edit commands",
+        "description": "Admin commands for direct approval/rejection/editing by chart_id",
+        "details": "Slash cmds restricted to approver role. Approve: same as button. Reject: optional reason TEXT. Edit: Modal with JSON textarea, validate/parse on submit. Use Pydantic for schema validation.",
+        "testStrategy": "Role-gated tests, JSON validation errors.",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "6",
+          "7"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Import existing 51-song canon",
+        "description": "Digitize and import current TNBGJ songbook as approved charts",
+        "details": "Manual/OCR from PDF using paddleocr 2.8+ or pymupdf 1.24. Parse to JSON schema, insert as source='imported' status='approved'. Add fuzzy alternate_titles.",
+        "testStrategy": "Verify 51 inserts, search accuracy.",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "7"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-25T14:52:31.181Z"
+      },
+      {
+        "id": 11,
+        "title": "Add fuzzy title matching and rate limiting",
+        "description": "Enable pg_trgm fuzzy search, per-user/guild rate limits",
+        "details": "Enable pg_trgm extension. Query with similarity threshold 0.3. Rate limit: Redis with aioredis 2.1.0, 3 req/10min per user/guild.",
+        "testStrategy": "Fuzzy query tests, rate limit enforcement.",
+        "priority": "low",
+        "dependencies": [
+          "1",
+          "4"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Production deployment and monitoring",
+        "description": "Deploy to DigitalOcean App Platform, add logging/cost monitoring",
+        "details": "Update Dockerfile/requirements.txt. Sentry 8.0+ for errors, Prometheus metrics for costs/latency/songbook growth. Auto-expire pending after 7 days cron.",
+        "testStrategy": "Smoke tests in staging, monitor first 10 generations.",
+        "priority": "low",
+        "dependencies": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11"
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2026-01-25T15:20:52.655Z",
+      "taskCount": 12,
+      "completedCount": 7,
+      "tags": [
+        "enhancement-chord-generator"
+      ],
+      "created": "2026-01-25T16:08:42.194Z",
+      "description": "Tasks for enhancement-chord-generator context"
     }
   }
 }

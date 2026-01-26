@@ -6,6 +6,7 @@ from discord import app_commands, ui
 from typing import Optional, Dict, Any
 
 from src.logger import logger
+from src.database import Database
 from src.chart_generator import (
     generate_chart_pdf,
     parse_chord_input,
@@ -18,13 +19,27 @@ from src.llm_client import LLMClient
 class CreateChartView(ui.View):
     """View with a button to open the chord chart creation modal."""
 
-    def __init__(self, db, prefill_title: str = None):
+    def __init__(self, db: Database, prefill_title: str = None):
         super().__init__(timeout=300)  # 5 minute timeout
         self.db = db
         self.prefill_title = prefill_title
 
     @ui.button(label="Create Chart", style=discord.ButtonStyle.primary, emoji="📝")
     async def create_button(self, interaction: discord.Interaction, button: ui.Button):
+        guild_id = interaction.guild_id
+
+        # Check if premium is enabled
+        if not self.db.is_premium_enabled(guild_id):
+            await interaction.response.send_message(
+                "**Premium Required**\n\n"
+                "Creating chord charts requires premium access.\n\n"
+                "**Get started with 5 free trial generations!**\n"
+                "Use `/jambot-premium-setup` to configure your premium token.\n\n"
+                "_Visit https://premium.jambot.io to get a token._",
+                ephemeral=True
+            )
+            return
+
         modal = ChartCreateModal(self.db, prefill_title=self.prefill_title)
         await interaction.response.send_modal(modal)
 
@@ -297,7 +312,27 @@ class ChartCommands:
                     await interaction.response.send_message(msg, ephemeral=True)
 
     async def _handle_create(self, interaction: discord.Interaction):
-        """Open the chord chart creation modal."""
+        """Open the chord chart creation modal.
+
+        Requires premium access to create new chord charts.
+        """
+        guild_id = interaction.guild_id
+
+        # Check if premium is enabled
+        if not self.db.is_premium_enabled(guild_id):
+            await interaction.response.send_message(
+                "**Premium Required**\n\n"
+                "Creating chord charts requires premium access.\n\n"
+                "**Get started with 5 free trial generations!**\n"
+                "Use `/jambot-premium-setup` to configure your premium token.\n\n"
+                "_Visit https://premium.jambot.io to get a token._\n\n"
+                "---\n"
+                "_Note: Viewing and transposing existing charts is always free._",
+                ephemeral=True
+            )
+            return
+
+        # Premium is enabled, show the create modal
         modal = ChartCreateModal(self.db)
         await interaction.response.send_modal(modal)
 
@@ -646,6 +681,18 @@ class ChartCommands:
 
         if is_create_request:
             logger.info(f"Chart create request via mention: title='{song_title}'")
+
+            # Check premium status for create requests
+            if not self.db.is_premium_enabled(guild_id):
+                await message.reply(
+                    "**Premium Required**\n\n"
+                    "Creating chord charts requires premium access.\n\n"
+                    "**Get started with 5 free trial generations!**\n"
+                    "Use `/jambot-premium-setup` to configure your premium token.\n\n"
+                    "_Visit https://premium.jambot.io to get a token._"
+                )
+                return
+
             view = CreateChartView(self.db, prefill_title=song_title)
             await message.reply(
                 "Click below to create a new chord chart:",
@@ -727,9 +774,17 @@ class ChartCommands:
 
             await message.reply(reply_msg, file=file)
         else:
-            view = CreateChartView(self.db, prefill_title=song_title)
-            await message.reply(
-                f"I don't have a chord chart for \"{song_title}\" yet. "
-                f"Click below to create one:",
-                view=view,
-            )
+            # Check premium status before offering to create
+            if self.db.is_premium_enabled(guild_id):
+                view = CreateChartView(self.db, prefill_title=song_title)
+                await message.reply(
+                    f"I don't have a chord chart for \"{song_title}\" yet. "
+                    f"Click below to create one:",
+                    view=view,
+                )
+            else:
+                await message.reply(
+                    f"I don't have a chord chart for \"{song_title}\" yet.\n\n"
+                    f"Creating charts requires premium access. "
+                    f"Use `/jambot-premium-setup` to get started with 5 free trial generations!"
+                )

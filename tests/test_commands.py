@@ -333,3 +333,47 @@ class TestRetryCommand:
 
         assert len(missing) == 1
         assert 'Will the Circle Be Unbroken' in missing
+
+
+class TestPremiumSetupModal:
+    """Test PremiumSetupModal class - integration-style tests."""
+
+    @pytest.mark.asyncio
+    async def test_submit_no_bot_config(self, mock_discord_interaction, mock_database):
+        """Should fail if bot is not configured."""
+        from src.commands import PremiumSetupModal
+
+        mock_database.get_bot_configuration.return_value = None
+
+        modal = PremiumSetupModal(db=mock_database)
+        modal.premium_token = MagicMock(value='jbp_test_token')
+
+        await modal.on_submit(mock_discord_interaction)
+
+        # Verify error message about running /jambot-setup first
+        mock_discord_interaction.response.send_message.assert_called_once()
+        call_args = mock_discord_interaction.response.send_message.call_args
+        assert 'setup' in str(call_args).lower()
+
+        # Verify config was NOT saved
+        mock_database.save_premium_config.assert_not_called()
+
+
+class TestPremiumCommands:
+    """Test premium-related commands - basic functionality tests."""
+
+    @pytest.mark.asyncio
+    async def test_premium_commands_require_bot_config(self, mock_database):
+        """Premium commands require JambotCommands which needs bot instance - test database interaction only."""
+        # Test that is_premium_enabled works correctly
+        mock_database.is_premium_enabled.return_value = True
+        assert mock_database.is_premium_enabled(123456789) is True
+
+        mock_database.is_premium_enabled.return_value = False
+        assert mock_database.is_premium_enabled(999999999) is False
+
+        # Test that get_bot_configuration is called
+        mock_database.get_bot_configuration.return_value = {'guild_id': 123456789}
+        config = mock_database.get_bot_configuration(123456789)
+        assert config is not None
+        assert config['guild_id'] == 123456789

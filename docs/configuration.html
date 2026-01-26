@@ -340,6 +340,7 @@
             <ul>
                 <li><a href="setup.html">Setup Guide</a></li>
                 <li><a href="configuration.html" class="active">Configuration</a></li>
+                <li><a href="ai-chord-charts.html">AI Chord Charts</a></li>
                 <li><a href="deployment.html">Deployment</a></li>
                 <li><a href="admin-guide.html">Admin Guide</a></li>
                 <li><a href="troubleshooting.html">Troubleshooting</a></li>
@@ -551,9 +552,78 @@ DISCORD_ADMIN_ID="987654321098765432"</code></pre>
                 <strong>💡 Need more help?</strong> Check the <a href="troubleshooting.html">Troubleshooting Guide</a> or visit our <a href="https://github.com/asachs01/jambot/issues">GitHub Support</a>.
             </div>
 
+            <h2 id="premium-features">Premium Features Setup</h2>
+            <p>JamBot supports premium AI chord chart generation through an optional Premium API service. This feature enables AI-powered chord chart creation with a credit-based billing system.</p>
+
+            <div class="alert alert-info">
+                <strong>💡 What is Premium?</strong> Premium features unlock AI-generated chord charts for any song. New servers get <strong>5 free generations</strong> to try the feature, then can purchase credit packs to continue.
+            </div>
+
+            <h3>Premium Environment Variables</h3>
+            <p>Add these variables to your <code>.env</code> file to enable premium features:</p>
+
+            <pre><code># Premium API Configuration
+PREMIUM_API_BASE_URL=https://api.premium.jambot.app
+PREMIUM_API_TIMEOUT=60</code></pre>
+
+            <h4>Variable Reference</h4>
+            <ul>
+                <li><strong>PREMIUM_API_BASE_URL</strong> (string) - The base URL for the JamBot Premium API
+                    <ul>
+                        <li>Default: <code>https://api.premium.jambot.app</code></li>
+                        <li>Only change this for self-hosted premium API instances</li>
+                    </ul>
+                </li>
+                <li><strong>PREMIUM_API_TIMEOUT</strong> (integer) - Request timeout in seconds
+                    <ul>
+                        <li>Default: <code>60</code></li>
+                        <li>AI generation can take time; keep this value at 30+ seconds</li>
+                        <li>Must be a positive integer</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h3>Enabling Premium for Your Server</h3>
+            <p>Once environment variables are configured, server administrators can enable premium:</p>
+
+            <ol>
+                <li>Obtain an API token from the <a href="https://premium.jambot.io">JamBot Premium Portal</a></li>
+                <li>Run <code>/jambot-premium-setup</code> in your Discord server</li>
+                <li>Enter your API token in the modal</li>
+                <li>The bot will validate your token and display your credit balance</li>
+            </ol>
+
+            <h3>Troubleshooting Premium Configuration</h3>
+
+            <h4>"Premium API request timed out"</h4>
+            <ul>
+                <li>Increase <code>PREMIUM_API_TIMEOUT</code> to 90 or 120 seconds</li>
+                <li>Check your network connectivity to the premium API</li>
+                <li>Verify <code>PREMIUM_API_BASE_URL</code> is correct</li>
+            </ul>
+
+            <h4>"Invalid premium token"</h4>
+            <ul>
+                <li>Verify your token was copied correctly from the premium portal</li>
+                <li>Check that your token hasn't been revoked</li>
+                <li>Ensure the token is for the correct Discord server</li>
+            </ul>
+
+            <h4>"Connection refused to premium API"</h4>
+            <ul>
+                <li>Check that <code>PREMIUM_API_BASE_URL</code> is set correctly</li>
+                <li>Verify your server can reach external HTTPS endpoints</li>
+                <li>Check for firewall rules blocking outbound connections</li>
+            </ul>
+
+            <div class="alert alert-success">
+                <strong>Next:</strong> See the <a href="admin-guide.html#premium-management">Premium Management Guide</a> for details on using premium commands.
+            </div>
+
             <h2>Next Steps</h2>
             <ul>
                 <li><a href="admin-guide.html">Learn how to use the approval workflow</a></li>
+                <li><a href="admin-guide.html#premium-management">Manage premium features</a></li>
                 <li><a href="deployment.html">Deploy to DigitalOcean</a></li>
                 <li><a href="troubleshooting.html">Troubleshooting common issues</a></li>
             </ul>

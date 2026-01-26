@@ -27,6 +27,12 @@ reportlab==4.1.0
 Flask==3.0.0
 gunicorn==21.2.0
 
+# HTTP Client for Premium API
+aiohttp==3.9.1
+
+# Password Hashing for Premium Token Storage
+bcrypt==4.1.2
+
 # LLM Integration
 pydantic>=2.0.0
 openai>=1.0.0
