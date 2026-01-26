@@ -1,8 +1,8 @@
 """Chord chart PDF generation and transposition for Jambot.
 
-Generates landscape letter PDFs matching the TNBGJ songbook format:
+Generates landscape letter PDFs with:
 - Left panel: title + lyrics
-- Right panel: chord grid (column-major reading order)
+- Right panel: chord grid (row-major reading order: left-to-right like lead sheets)
 """
 import io
 from typing import Dict, List, Optional, Any
@@ -142,8 +142,9 @@ def parse_chord_input(
             measure_chords = [c.strip() for c in measure.split() if c.strip()]
             chords.extend(measure_chords)
 
-        # Standard grid is 8 rows tall; columns expand as needed
-        rows = 8 if len(chords) > 8 else max(1, len(chords))
+        # Standard grid: 4 chords per row (like measures), expand rows as needed
+        cols = 4  # Standard measure: 4 beats/chords per row
+        rows = max(1, math.ceil(len(chords) / cols))
 
         sections.append({
             'label': label,
@@ -349,12 +350,12 @@ def _draw_chord_panel(
 ):
     """Draw the right panel with chart title and chord grids.
 
-    Layout matches the TNBGJ songbook:
+    Layout:
     - Chart title centered, bold italic 22pt
     - Key groups placed side by side (multi-key songs)
     - Within each key group: "Key of X" centered, sections side by side
     - Grid uses only vertical lines between columns
-    - Column-major reading order (top-to-bottom, left-to-right)
+    - Row-major reading order (left-to-right like traditional lead sheets)
     """
     top = y + h
     KEY_GROUP_GAP = 14  # gap between key groups (0.1in ~ 7pt, using 14 for clarity)
@@ -370,9 +371,10 @@ def _draw_chord_panel(
         sections = key_entry.get('sections', [])
         section_infos = []
         for section in sections:
-            rows = section.get('rows', 8)
             chords = section.get('chords', [])
-            cols = max(1, math.ceil(len(chords) / rows))
+            # Standard grid: 4 chords per row (like measures)
+            cols = 4
+            rows = max(1, math.ceil(len(chords) / cols))
             section_infos.append({
                 'section': section,
                 'rows': rows,
@@ -455,12 +457,12 @@ def _draw_chord_panel(
                 line_x = section_x + col * CELL_W
                 c.line(line_x, grid_top, line_x, grid_bottom)
 
-            # Draw chord text (column-major order)
+            # Draw chord text (row-major order: left-to-right, like lead sheets)
             c.setFont(FONT_BOLD, 11)
             c.setFillColor(black)
-            for col in range(cols):
-                for row in range(rows):
-                    idx = col * rows + row
+            for row in range(rows):
+                for col in range(cols):
+                    idx = row * cols + col
                     if idx < len(chords):
                         chord = chords[idx]
                         cx = section_x + col * CELL_W + CELL_W / 2
