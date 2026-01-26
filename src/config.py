@@ -80,7 +80,7 @@ class Config:
 
     # Premium API Configuration
     # Base URL for the premium chord chart generation service
-    PREMIUM_API_BASE_URL = os.getenv('PREMIUM_API_BASE_URL', 'https://api.premium.jambot.io')
+    PREMIUM_API_BASE_URL = os.getenv('PREMIUM_API_BASE_URL', 'https://api.premium.jambot.app')
     # Timeout in seconds for premium API requests (generation can take time)
     PREMIUM_API_TIMEOUT = int(os.getenv('PREMIUM_API_TIMEOUT', '60'))
 

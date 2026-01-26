@@ -194,7 +194,7 @@ JamBot supports premium AI chord chart generation through an optional Premium AP
 
 ```env
 # Premium API Configuration
-PREMIUM_API_BASE_URL=https://api.premium.jambot.io
+PREMIUM_API_BASE_URL=https://api.premium.jambot.app
 PREMIUM_API_TIMEOUT=60
 ```
 
@@ -202,7 +202,7 @@ PREMIUM_API_TIMEOUT=60
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `PREMIUM_API_BASE_URL` | string | `https://api.premium.jambot.io` | Base URL for the JamBot Premium API. Only change for self-hosted instances. |
+| `PREMIUM_API_BASE_URL` | string | `https://api.premium.jambot.app` | Base URL for the JamBot Premium API. Only change for self-hosted instances. |
 | `PREMIUM_API_TIMEOUT` | integer | `60` | Request timeout in seconds. AI generation can take time; keep at 30+ seconds. |
 
 ### How It Works

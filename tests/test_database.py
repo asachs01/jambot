@@ -456,3 +456,160 @@ class TestDatabasePatterns:
         )
 
         assert result is True
+
+
+class TestDatabasePremium:
+    """Test database premium configuration methods."""
+
+    @patch('src.database.psycopg2.connect')
+    def test_save_premium_config(self, mock_connect, sample_bot_configuration):
+        """Should save premium config with hashed token."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        # Mock get_bot_configuration to return existing config
+        mock_cursor.fetchone.return_value = {
+            'guild_id': sample_bot_configuration['guild_id'],
+            'jam_leader_ids': json.dumps(sample_bot_configuration['jam_leader_ids']),
+            'approver_ids': json.dumps(sample_bot_configuration['approver_ids']),
+            'channel_id': sample_bot_configuration['channel_id'],
+            'playlist_name_template': sample_bot_configuration['playlist_name_template'],
+        }
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        result = db.save_premium_config(
+            guild_id=sample_bot_configuration['guild_id'],
+            token_hash='$2b$12$hashed_token_value_here',
+            setup_by=111111111
+        )
+
+        assert result is True
+
+        # Verify UPDATE SQL was called with hash
+        call_args = mock_cursor.execute.call_args_list[-1]
+        assert 'UPDATE bot_configuration' in call_args[0][0]
+        assert 'premium_api_token_hash' in call_args[0][0]
+        assert 'premium_enabled' in call_args[0][0]
+
+    @patch('src.database.psycopg2.connect')
+    def test_get_premium_config_exists(self, mock_connect):
+        """Should retrieve premium configuration."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        mock_cursor.fetchone.return_value = {
+            'guild_id': 123456789,
+            'premium_api_token_hash': '$2b$12$hashed_token',
+            'premium_enabled': True
+        }
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        config = db.get_premium_config(123456789)
+
+        assert config is not None
+        assert config['guild_id'] == 123456789
+        assert config['premium_api_token_hash'] == '$2b$12$hashed_token'
+        assert config['premium_enabled'] is True
+
+    @patch('src.database.psycopg2.connect')
+    def test_get_premium_config_not_found(self, mock_connect):
+        """Should return None when premium config not found."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        mock_cursor.fetchone.return_value = None
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        config = db.get_premium_config(999999999)
+
+        assert config is None
+
+    @patch('src.database.psycopg2.connect')
+    def test_is_premium_enabled_true(self, mock_connect):
+        """Should return True when premium is enabled."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        # fetchone returns a tuple, not a dict for this query
+        mock_cursor.fetchone.return_value = (True,)
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        assert db.is_premium_enabled(123456789) is True
+
+    @patch('src.database.psycopg2.connect')
+    def test_is_premium_enabled_false(self, mock_connect):
+        """Should return False when premium is disabled."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        # fetchone returns a tuple, not a dict for this query
+        mock_cursor.fetchone.return_value = (False,)
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        assert db.is_premium_enabled(123456789) is False
+
+    @patch('src.database.psycopg2.connect')
+    def test_is_premium_enabled_no_config(self, mock_connect):
+        """Should return False when no config exists."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        mock_cursor.fetchone.return_value = None
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        assert db.is_premium_enabled(999999999) is False
+
+    @patch('src.database.psycopg2.connect')
+    def test_disable_premium(self, mock_connect, sample_bot_configuration):
+        """Should disable premium without deleting token."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        # Mock get_bot_configuration call
+        mock_cursor.fetchone.return_value = {
+            'guild_id': sample_bot_configuration['guild_id'],
+            'jam_leader_ids': json.dumps(sample_bot_configuration['jam_leader_ids']),
+            'approver_ids': json.dumps(sample_bot_configuration['approver_ids']),
+            'channel_id': sample_bot_configuration['channel_id'],
+            'playlist_name_template': sample_bot_configuration['playlist_name_template'],
+        }
+
+        from src.database import Database
+        db = Database(database_url='postgresql://test:test@localhost/test')
+
+        result = db.disable_premium(sample_bot_configuration['guild_id'])
+
+        assert result is True
+
+        # Verify UPDATE was called setting premium_enabled to FALSE
+        call_args = mock_cursor.execute.call_args_list[-1]
+        assert 'UPDATE bot_configuration' in call_args[0][0]
+        assert 'premium_enabled' in call_args[0][0]
+        # Should NOT be deleting the token hash
+        assert 'premium_api_token_hash' not in call_args[0][0] or 'NULL' not in call_args[0][0]

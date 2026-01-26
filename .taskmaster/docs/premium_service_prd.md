@@ -413,7 +413,7 @@ Update `src/config.py` with premium API settings.
 **New configuration:**
 ```python
 # Premium API Configuration
-PREMIUM_API_BASE_URL: str = os.getenv("PREMIUM_API_BASE_URL", "https://api.premium.jambot.io")
+PREMIUM_API_BASE_URL: str = os.getenv("PREMIUM_API_BASE_URL", "https://api.premium.jambot.app")
 PREMIUM_API_TIMEOUT: int = int(os.getenv("PREMIUM_API_TIMEOUT", "60"))
 ```
 
