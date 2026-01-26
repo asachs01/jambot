@@ -629,8 +629,22 @@ class ChartCommands:
             chart = result.chart
             chart_title = chart.get('title', song_title)
             chart_key = chart.get('key', 'G')
-            sections = chart.get('sections', [])
+            raw_sections = chart.get('sections', [])
             lyrics_data = chart.get('lyrics')
+
+            # Parse sections - API returns chords as pipe-separated strings
+            # like "A | A | E7 | E7" but PDF generator expects flat list ["A", "A", "E7", "E7"]
+            sections = []
+            for section in raw_sections:
+                parsed_chords = []
+                for chord_line in section.get('chords', []):
+                    # Split on pipe and clean up whitespace
+                    chords = [c.strip() for c in chord_line.split('|') if c.strip()]
+                    parsed_chords.extend(chords)
+                sections.append({
+                    'label': section.get('label', ''),
+                    'chords': parsed_chords,
+                })
 
             # Build keys structure
             keys = [{
