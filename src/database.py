@@ -238,6 +238,10 @@ class Database:
                 ALTER TABLE bot_configuration ADD COLUMN premium_api_token_hash VARCHAR(72);
             END IF;
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_api_token') THEN
+                ALTER TABLE bot_configuration ADD COLUMN premium_api_token TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                           WHERE table_name = 'bot_configuration' AND column_name = 'premium_enabled') THEN
                 ALTER TABLE bot_configuration ADD COLUMN premium_enabled BOOLEAN DEFAULT FALSE;
             END IF;
@@ -665,7 +669,7 @@ class Database:
         """
         config = self.get_bot_configuration(guild_id)
         if config:
-            return bool(config.get('premium_enabled') and config.get('premium_api_token_hash'))
+            return bool(config.get('premium_enabled') and config.get('premium_api_token'))
         return False
 
     def get_premium_config(self, guild_id: int) -> Optional[Dict[str, Any]]:
@@ -681,6 +685,7 @@ class Database:
         if config:
             return {
                 'premium_enabled': config.get('premium_enabled', False),
+                'premium_api_token': config.get('premium_api_token'),
                 'premium_api_token_hash': config.get('premium_api_token_hash'),
                 'premium_setup_by': config.get('premium_setup_by'),
                 'premium_setup_at': config.get('premium_setup_at'),
@@ -690,6 +695,7 @@ class Database:
     def save_premium_config(
         self,
         guild_id: int,
+        token: str,
         token_hash: str,
         setup_by: int
     ) -> bool:
@@ -697,7 +703,8 @@ class Database:
 
         Args:
             guild_id: Discord guild (server) ID.
-            token_hash: Hashed premium API token.
+            token: Premium API token (stored for API calls).
+            token_hash: Hashed premium API token (for validation).
             setup_by: Discord user ID who set up premium.
 
         Returns:
@@ -712,12 +719,13 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """UPDATE bot_configuration
-                   SET premium_api_token_hash = %s,
+                   SET premium_api_token = %s,
+                       premium_api_token_hash = %s,
                        premium_enabled = TRUE,
                        premium_setup_by = %s,
                        premium_setup_at = NOW()
                    WHERE guild_id = %s""",
-                (token_hash, setup_by, guild_id)
+                (token, token_hash, setup_by, guild_id)
             )
             logger.info(f"Saved premium configuration for guild {guild_id} (setup by {setup_by})")
             return True

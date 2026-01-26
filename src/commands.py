@@ -524,13 +524,14 @@ class PremiumSetupModal(Modal, title="Configure Premium Access"):
                 )
                 return
 
-            # Hash the token for secure storage
+            # Hash the token for secure storage (hash used for verification)
             token_bytes = token.encode('utf-8')
             token_hash = bcrypt.hashpw(token_bytes, bcrypt.gensalt()).decode('utf-8')
 
-            # Save the premium configuration
+            # Save the premium configuration (both token and hash stored)
             success = self.db.save_premium_config(
                 guild_id=guild_id,
+                token=token,
                 token_hash=token_hash,
                 setup_by=interaction.user.id
             )
