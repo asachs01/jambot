@@ -471,15 +471,21 @@ class PremiumSetupModal(Modal, title="Configure Premium Access"):
         Args:
             interaction: Discord interaction object.
         """
+        guild_id = interaction.guild_id
+        logger.info(f"Premium setup modal submitted by {interaction.user.id} in guild {guild_id}")
+
         try:
             token = self.api_token.value.strip()
-            guild_id = interaction.guild_id
 
             # Check if basic bot configuration exists
             config = self.db.get_bot_configuration(guild_id)
             if not config:
+                logger.warning(f"Premium setup failed: no bot configuration for guild {guild_id}. User must run /jambot-setup first.")
                 await interaction.response.send_message(
-                    "Please run `/jambot-setup` first to configure basic settings.",
+                    "**Setup Required**\n\n"
+                    "Please run `/jambot-setup` first to configure Jambot's basic settings "
+                    "(jam leaders, approvers, Spotify credentials).\n\n"
+                    "After that, come back and run `/jambot-premium-setup` again.",
                     ephemeral=True
                 )
                 return
@@ -487,10 +493,13 @@ class PremiumSetupModal(Modal, title="Configure Premium Access"):
             # Defer response since validation may take a moment
             await interaction.response.defer(ephemeral=True)
 
+            logger.info(f"Validating premium token for guild {guild_id}")
+
             # Validate the token with the premium API
             try:
                 async with PremiumClient() as client:
                     result = await client.validate_token(token)
+                    logger.info(f"Token validation result for guild {guild_id}: valid={result.get('valid')}")
 
                     if not result.get("valid", False):
                         await interaction.followup.send(
@@ -528,6 +537,8 @@ class PremiumSetupModal(Modal, title="Configure Premium Access"):
             token_bytes = token.encode('utf-8')
             token_hash = bcrypt.hashpw(token_bytes, bcrypt.gensalt()).decode('utf-8')
 
+            logger.info(f"Saving premium config for guild {guild_id}")
+
             # Save the premium configuration (both token and hash stored)
             success = self.db.save_premium_config(
                 guild_id=guild_id,
@@ -536,7 +547,10 @@ class PremiumSetupModal(Modal, title="Configure Premium Access"):
                 setup_by=interaction.user.id
             )
 
+            logger.info(f"Save premium config result for guild {guild_id}: success={success}")
+
             if not success:
+                logger.error(f"Failed to save premium config for guild {guild_id}")
                 await interaction.followup.send(
                     "Error saving premium configuration. Please try again.",
                     ephemeral=True

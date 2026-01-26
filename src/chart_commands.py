@@ -29,7 +29,10 @@ class CreateChartView(ui.View):
         guild_id = interaction.guild_id
 
         # Check if premium is enabled
-        if not self.db.is_premium_enabled(guild_id):
+        is_premium = self.db.is_premium_enabled(guild_id)
+        logger.info(f"Premium check for chart creation in guild {guild_id}: enabled={is_premium}")
+
+        if not is_premium:
             await interaction.response.send_message(
                 "**Premium Required**\n\n"
                 "Creating chord charts requires premium access.\n\n"

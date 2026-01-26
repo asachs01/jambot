@@ -669,7 +669,15 @@ class Database:
         """
         config = self.get_bot_configuration(guild_id)
         if config:
-            return bool(config.get('premium_enabled') and config.get('premium_api_token'))
+            premium_enabled = config.get('premium_enabled')
+            has_token = bool(config.get('premium_api_token'))
+            result = bool(premium_enabled and has_token)
+            logger.info(
+                f"is_premium_enabled for guild {guild_id}: "
+                f"premium_enabled={premium_enabled}, has_token={has_token}, result={result}"
+            )
+            return result
+        logger.info(f"is_premium_enabled for guild {guild_id}: no config found")
         return False
 
     def get_premium_config(self, guild_id: int) -> Optional[Dict[str, Any]]:
