@@ -14,6 +14,12 @@ from src.chart_generator import (
     note_to_index,
 )
 from src.llm_client import LLMClient
+from src.premium_client import (
+    PremiumClient,
+    InvalidTokenError,
+    InsufficientCreditsError,
+    APIConnectionError,
+)
 
 
 class CreateChartView(ui.View):
@@ -216,7 +222,7 @@ class ChartCommands:
         )
         @app_commands.describe(
             action="Action to perform",
-            song_title="Song title (for view/transpose/generate)",
+            song_title="Song title (for create/view/transpose - AI generates if provided with create)",
             new_key="Target key (for transpose)",
         )
         @app_commands.choices(action=[
@@ -233,7 +239,12 @@ class ChartCommands:
             new_key: Optional[str] = None,
         ):
             if action.value == "create":
-                await self._handle_create(interaction)
+                # If song title provided, use AI generation
+                # Otherwise show manual entry modal
+                if song_title:
+                    await self._handle_generate(interaction, song_title)
+                else:
+                    await self._handle_create(interaction)
             elif action.value == "view":
                 await self._handle_view(interaction, song_title, new_key)
             elif action.value == "list":
@@ -517,13 +528,29 @@ class ChartCommands:
         self, interaction: discord.Interaction,
         song_title: Optional[str]
     ):
-        """Generate a chord chart using AI for a song title with optional artist.
+        """Generate a chord chart using AI via the Premium API.
 
         Parses format: "Song Title" or "Song Title by Artist Name"
         """
+        guild_id = interaction.guild_id
+
         if not song_title:
             await interaction.response.send_message(
-                "Please provide a song title.", ephemeral=True
+                "Please provide a song title.\n"
+                "Example: `/jambot-chart generate Mountain Dew`",
+                ephemeral=True
+            )
+            return
+
+        # Check if premium is enabled
+        if not self.db.is_premium_enabled(guild_id):
+            await interaction.response.send_message(
+                "**Premium Required**\n\n"
+                "AI chord chart generation requires premium access.\n\n"
+                "**Get started with 5 free trial generations!**\n"
+                "Use `/jambot-premium-setup` to configure your premium token.\n\n"
+                "_Visit https://premium.jambot.io to get a token._",
+                ephemeral=True
             )
             return
 
@@ -531,70 +558,95 @@ class ChartCommands:
 
         # Parse artist from "by Artist" pattern
         artist = None
+        key = None
         match = re.match(r'^(.+?)\s+by\s+(.+)$', song_title, re.IGNORECASE)
         if match:
             song_title = match.group(1).strip()
             artist = match.group(2).strip()
 
         # Check if chart already exists with fuzzy search
-        existing_chart = self.db.fuzzy_search_chord_chart(interaction.guild_id, song_title)
+        existing_chart = self.db.fuzzy_search_chord_chart(guild_id, song_title)
 
         if existing_chart:
             status = existing_chart.get('status', 'approved')
             if status == 'approved':
-                # Return approved chart as embed preview
+                # Return existing chart as PDF
                 chart_data = {
                     'title': existing_chart['title'],
-                    'artist': artist,
                     'keys': existing_chart['keys'],
+                    'lyrics': existing_chart.get('lyrics'),
                     'status': status,
-                    'source': existing_chart.get('source', 'user_created'),
                 }
-                embed = _create_chart_preview_embed(chart_data)
+                pdf_buf = generate_chart_pdf(chart_data)
+                filename = f"{existing_chart['title'].replace(' ', '_')}.pdf"
+                file = discord.File(fp=pdf_buf, filename=filename)
+
                 await interaction.followup.send(
-                    f"Found existing approved chart for **{existing_chart['title']}**:",
-                    embed=embed
+                    f"Found existing chart for **{existing_chart['title']}**:",
+                    file=file
                 )
                 return
             else:
-                # Chart exists but not approved
                 await interaction.followup.send(
-                    f"Chart for **{existing_chart['title']}** exists but is not approved yet (status: {status})."
+                    f"Chart for **{existing_chart['title']}** exists but is pending approval (status: {status})."
                 )
                 return
 
-        # Chart not found - generate with LLM
+        # Get premium token
+        premium_config = self.db.get_premium_config(guild_id)
+        token = premium_config.get('premium_api_token')
+
+        # Generate via Premium API
         try:
-            logger.info(f"Generating chord chart via LLM: title='{song_title}', artist='{artist}'")
+            logger.info(f"Generating chord chart via Premium API: title='{song_title}', artist='{artist}', guild={guild_id}")
 
-            response = self.llm_client.generate_chord_chart(song_title, artist)
+            async with PremiumClient() as client:
+                result = await client.generate_chart(
+                    token=token,
+                    guild_id=guild_id,
+                    title=song_title,
+                    artist=artist,
+                    key=key
+                )
 
-            # Convert LLM response to database format
-            sections = []
-            for section in response.sections:
-                sections.append({
-                    'label': section.label,
-                    'chords': section.chords,
-                })
+            if not result.success:
+                if result.error == "insufficient_credits":
+                    await interaction.followup.send(
+                        "**No Credits Remaining**\n\n"
+                        f"You have {result.credits_remaining} credits left.\n\n"
+                        "Use `/jambot-buy-credits` to purchase more credits.",
+                        ephemeral=True
+                    )
+                    return
+                else:
+                    await interaction.followup.send(
+                        f"Chart generation failed: {result.error}",
+                        ephemeral=True
+                    )
+                    return
 
-            lyrics = None
-            if response.lyrics:
-                lyrics = []
-                for lyric_section in response.lyrics:
-                    lyrics.append({
-                        'label': lyric_section.label,
-                        'lines': lyric_section.lines,
-                    })
+            # Extract chart data from API response
+            chart = result.chart
+            chart_title = chart.get('title', song_title)
+            chart_key = chart.get('key', 'G')
+            sections = chart.get('sections', [])
+            lyrics_data = chart.get('lyrics')
 
+            # Build keys structure
             keys = [{
-                'key': response.key,
+                'key': chart_key,
                 'sections': sections,
             }]
 
-            # Insert to database as draft
+            # Build lyrics structure if present
+            lyrics = None
+            if lyrics_data:
+                lyrics = lyrics_data
+
+            # Save to database as draft
             chart_id = self.db.create_chord_chart(
-                guild_id=interaction.guild_id,
-                title=response.title,
+                guild_id=guild_id,
+                title=chart_title,
                 chart_title=None,
                 lyrics=lyrics,
                 keys=keys,
@@ -607,36 +659,44 @@ class ChartCommands:
             # Save generation history
             self.db.create_generation_history(
                 chart_id=chart_id,
-                prompt=f"Generate chord chart for '{song_title}' by {artist}" if artist else f"Generate chord chart for '{song_title}'",
-                response={
-                    'title': response.title,
-                    'artist': response.artist,
-                    'key': response.key,
-                    'sections': [s.model_dump() for s in response.sections],
-                    'lyrics': [l.model_dump() for l in response.lyrics] if response.lyrics else None,
-                },
-                model=self.llm_client.model,
+                prompt=f"Generate chord chart for '{song_title}'" + (f" by {artist}" if artist else ""),
+                response=chart,
+                model='premium_api',
             )
 
-            # Generate embed preview
+            # Generate PDF
             chart_data = {
-                'title': response.title,
-                'artist': response.artist,
+                'title': chart_title,
                 'keys': keys,
+                'lyrics': lyrics,
                 'status': 'draft',
-                'source': 'ai_generated',
             }
-            embed = _create_chart_preview_embed(chart_data)
+            pdf_buf = generate_chart_pdf(chart_data)
+            filename = f"{chart_title.replace(' ', '_')}.pdf"
+            file = discord.File(fp=pdf_buf, filename=filename)
+
+            credits_msg = f"({result.credits_remaining} credits remaining)"
 
             await interaction.followup.send(
-                f"Generated new chord chart for **{response.title}** (saved as draft):",
-                embed=embed
+                f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**\n"
+                f"{credits_msg}\n\n"
+                f"_Use `/jambot-chart approve {chart_title}` to finalize._",
+                file=file
             )
 
-        except ValueError as e:
-            # No API key configured
+        except InvalidTokenError:
+            logger.error(f"Invalid premium token for guild {guild_id}")
             await interaction.followup.send(
-                f"Chart generation not available: {e}",
+                "**Invalid Premium Token**\n\n"
+                "Your premium token appears to be invalid or expired.\n"
+                "Please run `/jambot-premium-setup` again with a valid token.",
+                ephemeral=True
+            )
+        except APIConnectionError as e:
+            logger.error(f"Premium API connection error: {e}")
+            await interaction.followup.send(
+                "**Service Unavailable**\n\n"
+                "Unable to connect to the premium API. Please try again later.",
                 ephemeral=True
             )
         except Exception as e:
