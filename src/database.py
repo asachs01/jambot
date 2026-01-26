@@ -232,6 +232,23 @@ class Database:
                           WHERE table_name = 'chord_charts' AND column_name = 'status') THEN
                 ALTER TABLE chord_charts ADD COLUMN status TEXT DEFAULT 'approved';
             END IF;
+            -- Premium API columns for bot_configuration
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_api_token_hash') THEN
+                ALTER TABLE bot_configuration ADD COLUMN premium_api_token_hash VARCHAR(72);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_enabled') THEN
+                ALTER TABLE bot_configuration ADD COLUMN premium_enabled BOOLEAN DEFAULT FALSE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_setup_by') THEN
+                ALTER TABLE bot_configuration ADD COLUMN premium_setup_by BIGINT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_setup_at') THEN
+                ALTER TABLE bot_configuration ADD COLUMN premium_setup_at TIMESTAMP;
+            END IF;
             -- Enable pg_trgm extension for fuzzy text search
             CREATE EXTENSION IF NOT EXISTS pg_trgm;
         END $$;
@@ -634,6 +651,100 @@ class Database:
         if config:
             return config['approver_ids']
         return []
+
+    # --- Premium API Methods ---
+
+    def is_premium_enabled(self, guild_id: int) -> bool:
+        """Check if premium features are enabled for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            True if premium is enabled and token is configured, False otherwise.
+        """
+        config = self.get_bot_configuration(guild_id)
+        if config:
+            return bool(config.get('premium_enabled') and config.get('premium_api_token_hash'))
+        return False
+
+    def get_premium_config(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get premium configuration for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            Dictionary with premium config if configured, None otherwise.
+        """
+        config = self.get_bot_configuration(guild_id)
+        if config:
+            return {
+                'premium_enabled': config.get('premium_enabled', False),
+                'premium_api_token_hash': config.get('premium_api_token_hash'),
+                'premium_setup_by': config.get('premium_setup_by'),
+                'premium_setup_at': config.get('premium_setup_at'),
+            }
+        return None
+
+    def save_premium_config(
+        self,
+        guild_id: int,
+        token_hash: str,
+        setup_by: int
+    ) -> bool:
+        """Save premium API configuration for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            token_hash: Hashed premium API token.
+            setup_by: Discord user ID who set up premium.
+
+        Returns:
+            True if saved successfully, False if no bot configuration exists.
+        """
+        config = self.get_bot_configuration(guild_id)
+        if not config:
+            logger.warning(f"Cannot save premium config: no bot configuration for guild {guild_id}")
+            return False
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE bot_configuration
+                   SET premium_api_token_hash = %s,
+                       premium_enabled = TRUE,
+                       premium_setup_by = %s,
+                       premium_setup_at = NOW()
+                   WHERE guild_id = %s""",
+                (token_hash, setup_by, guild_id)
+            )
+            logger.info(f"Saved premium configuration for guild {guild_id} (setup by {setup_by})")
+            return True
+
+    def disable_premium(self, guild_id: int) -> bool:
+        """Disable premium features for a guild.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+
+        Returns:
+            True if disabled successfully, False if no configuration exists.
+        """
+        config = self.get_bot_configuration(guild_id)
+        if not config:
+            return False
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE bot_configuration
+                   SET premium_enabled = FALSE
+                   WHERE guild_id = %s""",
+                (guild_id,)
+            )
+            logger.info(f"Disabled premium for guild {guild_id}")
+            return True
 
     def is_spotify_authorized(self, guild_id: int) -> bool:
         """Check if Spotify tokens exist for a guild.
