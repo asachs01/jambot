@@ -81,7 +81,7 @@ class ChartCreateModal(ui.Modal, title="Create Chord Chart"):
             required=True,
         )
         self.lyrics = ui.TextInput(
-            label="Lyrics (optional, sections separated by blank lines)",
+            label="Lyrics (optional, blank line = section)",
             style=discord.TextStyle.paragraph,
             placeholder="Verse lyrics here...\n\nChorus lyrics here...",
             required=False,
