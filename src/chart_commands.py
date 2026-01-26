@@ -763,15 +763,22 @@ class ChartCommands:
             return
 
         # Delete the chart
-        deleted = self.db.delete_chord_chart(interaction.guild_id, chart['title'])
+        try:
+            deleted = self.db.delete_chord_chart(interaction.guild_id, chart['title'])
 
-        if deleted:
+            if deleted:
+                await interaction.followup.send(
+                    f"Deleted chord chart **{chart['title']}**."
+                )
+            else:
+                await interaction.followup.send(
+                    f"Could not find chart \"{chart['title']}\" to delete.",
+                    ephemeral=True
+                )
+        except Exception as e:
+            logger.error(f"Error deleting chart '{chart['title']}': {e}", exc_info=True)
             await interaction.followup.send(
-                f"Deleted chord chart **{chart['title']}**."
-            )
-        else:
-            await interaction.followup.send(
-                f"Failed to delete chart \"{chart['title']}\".",
+                f"Unable to delete **{chart['title']}**. Please try again or contact support.",
                 ephemeral=True
             )
 
