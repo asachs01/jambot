@@ -2,7 +2,12 @@
 
 Generates landscape letter PDFs with:
 - Left panel: title + lyrics
-- Right panel: chord grid (row-major reading order: left-to-right like lead sheets)
+- Right panel: chord grid (column-major reading order: top-to-bottom, then left-to-right)
+
+TNBGJ Songbook Format:
+- 8 columns per section
+- 4 rows per section (standard)
+- Column-major reading: read down each column, then move right
 """
 import io
 from typing import Dict, List, Optional, Any
@@ -142,9 +147,9 @@ def parse_chord_input(
             measure_chords = [c.strip() for c in measure.split() if c.strip()]
             chords.extend(measure_chords)
 
-        # Standard grid: 4 chords per row (like measures), expand rows as needed
-        cols = 4  # Standard measure: 4 beats/chords per row
-        rows = max(1, math.ceil(len(chords) / cols))
+        # TNBGJ songbook format: 8 columns, 4 rows standard (column-major reading)
+        cols = 8  # 8 columns per section (TNBGJ format)
+        rows = max(4, math.ceil(len(chords) / cols))  # At least 4 rows, expand if needed
 
         sections.append({
             'label': label,
@@ -350,12 +355,13 @@ def _draw_chord_panel(
 ):
     """Draw the right panel with chart title and chord grids.
 
-    Layout:
+    Layout (TNBGJ songbook format):
     - Chart title centered, bold italic 22pt
     - Key groups placed side by side (multi-key songs)
     - Within each key group: "Key of X" centered, sections side by side
     - Grid uses only vertical lines between columns
-    - Row-major reading order (left-to-right like traditional lead sheets)
+    - Column-major reading order (top-to-bottom, then left-to-right)
+    - 8 columns, 4 rows per section (standard)
     """
     top = y + h
     KEY_GROUP_GAP = 14  # gap between key groups (0.1in ~ 7pt, using 14 for clarity)
@@ -372,9 +378,11 @@ def _draw_chord_panel(
         section_infos = []
         for section in sections:
             chords = section.get('chords', [])
-            # Standard grid: 4 chords per row (like measures)
-            cols = 4
-            rows = max(1, math.ceil(len(chords) / cols))
+            # TNBGJ songbook format: 8 columns, 4 rows standard
+            cols = 8
+            rows = section.get('rows', 4)  # Use stored rows, default 4
+            # Expand rows if we have more chords than fit
+            rows = max(rows, math.ceil(len(chords) / cols))
             section_infos.append({
                 'section': section,
                 'rows': rows,
@@ -457,12 +465,13 @@ def _draw_chord_panel(
                 line_x = section_x + col * CELL_W
                 c.line(line_x, grid_top, line_x, grid_bottom)
 
-            # Draw chord text (row-major order: left-to-right, like lead sheets)
+            # Draw chord text (column-major order: top-to-bottom, then left-to-right)
+            # This matches TNBGJ songbook format: read down column 1, then column 2, etc.
             c.setFont(FONT_BOLD, 11)
             c.setFillColor(black)
-            for row in range(rows):
-                for col in range(cols):
-                    idx = row * cols + col
+            for col in range(cols):
+                for row in range(rows):
+                    idx = col * rows + row  # column-major: column advances slower
                     if idx < len(chords):
                         chord = chords[idx]
                         cx = section_x + col * CELL_W + CELL_W / 2
