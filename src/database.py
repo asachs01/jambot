@@ -734,7 +734,6 @@ class Database:
                 return dict(row)
             return None
 
-<<<<<<< HEAD
     def fuzzy_search_chord_chart(self, guild_id: int, query: str) -> Optional[Dict[str, Any]]:
         """Search for a chord chart using fuzzy text matching with pg_trgm.
 
