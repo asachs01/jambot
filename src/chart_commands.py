@@ -638,10 +638,11 @@ class ChartCommands:
                 'sections': sections,
             }]
 
-            # Build lyrics structure if present
+            # Build lyrics structure if present (must be list of dicts, not string)
             lyrics = None
-            if lyrics_data:
+            if lyrics_data and isinstance(lyrics_data, list):
                 lyrics = lyrics_data
+            # If AI returned a string for lyrics, ignore it (PDF expects list format)
 
             # Save to database as draft
             chart_id = self.db.create_chord_chart(
