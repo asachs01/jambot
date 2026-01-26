@@ -314,6 +314,10 @@ def _draw_lyrics_panel(
     if not lyrics:
         return
 
+    # Handle case where lyrics is a string (from AI) instead of list
+    if isinstance(lyrics, str):
+        return  # Skip string lyrics, PDF expects list format
+
     cursor_y = top - 50
     line_height = 15.4  # 11pt * 1.4 line-height
 
