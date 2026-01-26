@@ -223,6 +223,7 @@ class ChartCommands:
         @app_commands.describe(
             action="Action to perform",
             song_title="Song title (for create/view/transpose - AI generates if provided with create)",
+            key="Key for AI generation (e.g., G, A, D)",
             new_key="Target key (for transpose)",
         )
         @app_commands.choices(action=[
@@ -236,13 +237,14 @@ class ChartCommands:
             interaction: discord.Interaction,
             action: app_commands.Choice[str],
             song_title: Optional[str] = None,
+            key: Optional[str] = None,
             new_key: Optional[str] = None,
         ):
             if action.value == "create":
                 # If song title provided, use AI generation
                 # Otherwise show manual entry modal
                 if song_title:
-                    await self._handle_generate(interaction, song_title)
+                    await self._handle_generate(interaction, song_title, key)
                 else:
                     await self._handle_create(interaction)
             elif action.value == "view":
@@ -252,7 +254,7 @@ class ChartCommands:
             elif action.value == "transpose":
                 await self._handle_transpose(interaction, song_title, new_key)
             elif action.value == "generate":
-                await self._handle_generate(interaction, song_title)
+                await self._handle_generate(interaction, song_title, key)
 
         @jambot_chart.error
         async def chart_error(interaction: discord.Interaction, error):
@@ -526,7 +528,8 @@ class ChartCommands:
 
     async def _handle_generate(
         self, interaction: discord.Interaction,
-        song_title: Optional[str]
+        song_title: Optional[str],
+        key: Optional[str] = None
     ):
         """Generate a chord chart using AI via the Premium API.
 
@@ -537,7 +540,7 @@ class ChartCommands:
         if not song_title:
             await interaction.response.send_message(
                 "Please provide a song title.\n"
-                "Example: `/jambot-chart generate Mountain Dew`",
+                "Example: `/jambot-chart create Mountain Dew key:G`",
                 ephemeral=True
             )
             return
@@ -558,7 +561,6 @@ class ChartCommands:
 
         # Parse artist from "by Artist" pattern
         artist = None
-        key = None
         match = re.match(r'^(.+?)\s+by\s+(.+)$', song_title, re.IGNORECASE)
         if match:
             song_title = match.group(1).strip()
