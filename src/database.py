@@ -1104,6 +1104,27 @@ class Database:
                 )
             logger.info(f"Updated status to '{status}' for chart '{title}' in guild {guild_id}")
 
+    def delete_chord_chart(self, guild_id: int, title: str) -> bool:
+        """Delete a chord chart by title.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            title: Song title to delete.
+
+        Returns:
+            True if chart was deleted, False if not found.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM chord_charts WHERE guild_id = %s AND title = %s",
+                (guild_id, title)
+            )
+            deleted = cursor.rowcount > 0
+            if deleted:
+                logger.info(f"Deleted chart '{title}' from guild {guild_id}")
+            return deleted
+
     def get_draft_charts(self, guild_id: int) -> List[Dict[str, Any]]:
         """List all draft chord charts for a guild.
 

@@ -232,6 +232,7 @@ class ChartCommands:
             app_commands.Choice(name="list", value="list"),
             app_commands.Choice(name="transpose", value="transpose"),
             app_commands.Choice(name="generate", value="generate"),
+            app_commands.Choice(name="delete", value="delete"),
         ])
         async def jambot_chart(
             interaction: discord.Interaction,
@@ -255,6 +256,8 @@ class ChartCommands:
                 await self._handle_transpose(interaction, song_title, new_key)
             elif action.value == "generate":
                 await self._handle_generate(interaction, song_title, key)
+            elif action.value == "delete":
+                await self._handle_delete(interaction, song_title)
 
         @jambot_chart.error
         async def chart_error(interaction: discord.Interaction, error):
@@ -720,6 +723,55 @@ class ChartCommands:
             logger.error(f"Chart generation failed: {e}", exc_info=True)
             await interaction.followup.send(
                 "Chart generation failed. Please try again later.",
+                ephemeral=True
+            )
+
+    async def _handle_delete(
+        self, interaction: discord.Interaction,
+        song_title: Optional[str]
+    ):
+        """Delete a chord chart (admin only)."""
+        if not song_title:
+            await interaction.response.send_message(
+                "Please provide a song title to delete.",
+                ephemeral=True
+            )
+            return
+
+        # Check for admin permissions
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "Only administrators can delete chord charts.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(thinking=True)
+
+        # Try to find the chart (exact or fuzzy match)
+        chart = self.db.get_chord_chart(interaction.guild_id, song_title)
+        if not chart:
+            charts = self.db.search_chord_charts(interaction.guild_id, song_title)
+            if charts:
+                chart = charts[0]
+
+        if not chart:
+            await interaction.followup.send(
+                f"No chord chart found matching \"{song_title}\".",
+                ephemeral=True
+            )
+            return
+
+        # Delete the chart
+        deleted = self.db.delete_chord_chart(interaction.guild_id, chart['title'])
+
+        if deleted:
+            await interaction.followup.send(
+                f"Deleted chord chart **{chart['title']}**."
+            )
+        else:
+            await interaction.followup.send(
+                f"Failed to delete chart \"{chart['title']}\".",
                 ephemeral=True
             )
 
