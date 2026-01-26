@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chord Chart Formats – JamBot Documentation</title>
+    <meta name="description" content="Learn about JamBot's chord chart formats including the TNBGJ songbook style with two-panel landscape layout.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --orange: #C86A2A;
+            --orange-dark: #A0501E;
+            --brown: #3B2618;
+            --cream: #F2E3C8;
+            --green: #1DB954;
+            --tan: #8B5E3C;
+            --light-orange: #FFD18A;
+        }
+
+        body {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--brown);
+            line-height: 1.7;
+            font-size: 18px;
+            background: white;
+        }
+
+        /* Header */
+        .header {
+            background: var(--orange);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            text-decoration: none;
+            color: white;
+        }
+
+        .header-brand h1 {
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .header-nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 32px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .header-nav a:hover {
+            opacity: 0.8;
+        }
+
+        /* Main Layout */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 60px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: sticky;
+            top: 40px;
+            height: fit-content;
+        }
+
+        .sidebar-nav {
+            list-style: none;
+        }
+
+        .sidebar-nav li {
+            margin-bottom: 8px;
+        }
+
+        .sidebar-nav a {
+            color: var(--brown);
+            text-decoration: none;
+            font-weight: 600;
+            padding: 8px 12px;
+            display: block;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .sidebar-nav a:hover {
+            background: var(--cream);
+            color: var(--orange);
+        }
+
+        .sidebar-nav a.active {
+            background: var(--orange);
+            color: white;
+        }
+
+        /* Content */
+        .content {
+            min-width: 0;
+        }
+
+        .content h1 {
+            font-size: 36px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            color: var(--orange);
+        }
+
+        .content h2 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-top: 48px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--cream);
+        }
+
+        .content h3 {
+            font-size: 22px;
+            font-weight: 700;
+            margin-top: 32px;
+            margin-bottom: 12px;
+        }
+
+        .content p {
+            margin-bottom: 16px;
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 16px;
+            padding-left: 24px;
+        }
+
+        .content li {
+            margin-bottom: 8px;
+        }
+
+        .content code {
+            font-family: 'Fira Code', monospace;
+            background: var(--cream);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .content pre {
+            background: var(--brown);
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 24px;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+
+        /* Screenshot container */
+        .screenshot {
+            margin: 32px 0;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .screenshot img {
+            width: 100%;
+            display: block;
+        }
+
+        .screenshot-caption {
+            background: var(--cream);
+            padding: 12px 16px;
+            font-size: 14px;
+            font-style: italic;
+            color: var(--tan);
+        }
+
+        /* Feature box */
+        .feature-box {
+            background: linear-gradient(135deg, var(--cream) 0%, #fff 100%);
+            border-left: 4px solid var(--orange);
+            padding: 20px 24px;
+            margin: 24px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .feature-box h4 {
+            font-weight: 700;
+            color: var(--orange);
+            margin-bottom: 8px;
+        }
+
+        /* Format comparison table */
+        .format-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+        }
+
+        .format-table th,
+        .format-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .format-table th {
+            background: var(--cream);
+            font-weight: 700;
+            color: var(--orange);
+        }
+
+        .format-table tr:hover {
+            background: #fafafa;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-default {
+            background: var(--orange);
+            color: white;
+        }
+
+        .badge-coming {
+            background: #e0e0e0;
+            color: #666;
+        }
+
+        /* Diagram */
+        .diagram {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+
+        /* Alert box */
+        .alert {
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin: 24px 0;
+        }
+
+        .alert-info {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+
+        .alert-tip {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+        }
+
+        /* Footer */
+        .footer {
+            background: var(--brown);
+            color: var(--cream);
+            padding: 40px 24px;
+            margin-top: 80px;
+            text-align: center;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                position: static;
+                margin-bottom: 32px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="setup.html" class="header-brand">
+                <h1>JamBot Docs</h1>
+            </a>
+            <nav class="header-nav">
+                <a href="setup.html">Setup</a>
+                <a href="admin-guide.html">Admin Guide</a>
+                <a href="ai-chord-charts.html">AI Charts</a>
+                <a href="chord-chart-formats.html">Formats</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <ul class="sidebar-nav">
+                <li><a href="setup.html">Initial Setup</a></li>
+                <li><a href="configuration.html">Configuration</a></li>
+                <li><a href="admin-guide.html">Admin Guide</a></li>
+                <li><a href="ai-chord-charts.html">AI Chord Charts</a></li>
+                <li><a href="chord-chart-formats.html" class="active">Chart Formats</a></li>
+                <li><a href="deployment.html">Deployment</a></li>
+                <li><a href="troubleshooting.html">Troubleshooting</a></li>
+            </ul>
+        </aside>
+
+        <!-- Content -->
+        <main class="content">
+            <h1>Chord Chart Formats</h1>
+            <p>JamBot generates PDF chord charts in a specific format designed for quick readability during jam sessions. This page explains the format structure and how to read the charts.</p>
+
+            <h2 id="tnbgj-format">TNBGJ Songbook Format</h2>
+            <p>The default format is based on the <strong>Thursday Night Bluegrass Jam (TNBGJ)</strong> songbook style, optimized for bluegrass, folk, and old-time music. It's designed to be read at a glance during live jams.</p>
+
+            <div class="feature-box">
+                <h4>Key Characteristics</h4>
+                <ul>
+                    <li><strong>Landscape orientation</strong> – Fits more chord columns on a single page</li>
+                    <li><strong>Two-panel layout</strong> – Lyrics on the left, chord grid on the right</li>
+                    <li><strong>Column-major reading</strong> – Read chords top-to-bottom, then left-to-right</li>
+                    <li><strong>Multiple keys</strong> – Shows the same song transposed to common jam keys</li>
+                    <li><strong>Serif typography</strong> – Georgia/Times fonts for traditional songbook feel</li>
+                </ul>
+            </div>
+
+            <h3>Example Chart</h3>
+            <p>Here's an example of the TNBGJ format showing "Blue Ridge Cabin Home" in both G and A:</p>
+
+            <div class="screenshot">
+                <img src="images/tnbgj-example.png" alt="Blue Ridge Cabin Home chord chart in TNBGJ format">
+                <div class="screenshot-caption">
+                    TNBGJ format: Two-panel landscape layout with lyrics (left) and chord grids in multiple keys (right)
+                </div>
+            </div>
+
+            <h3>Layout Structure</h3>
+            <div class="diagram">
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           LANDSCAPE LETTER PAGE                              │
+├─────────────────────────────┬───────────────────────────────────────────────┤
+│                             │                                               │
+│  TITLE (Bold 18pt)          │           CHART TITLE (Bold Italic 22pt)      │
+│  ─────────────────          │                                               │
+│                             │  Key of G          Key of A                   │
+│  Verse 1 (Italic label)     │  ┌───────────┐     ┌───────────┐              │
+│  Lyrics line 1              │  │ G │ G │ C │     │ A │ A │ D │              │
+│  Lyrics line 2              │  │ D │ G │ G │     │ E │ A │ A │              │
+│  Lyrics line 3              │  └───────────┘     └───────────┘              │
+│  Lyrics line 4              │                                               │
+│                             │  (Chords read top-to-bottom,                  │
+│  Verse 2                    │   then left-to-right)                         │
+│  Lyrics line 1              │                                               │
+│  Lyrics line 2              │                                               │
+│  ...                        │                                               │
+│                             │                                               │
+├─────────────────────────────┴───────────────────────────────────────────────┤
+│                               [DRAFT] (if not approved)                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+            </div>
+
+            <h3>Reading the Chord Grid</h3>
+            <p>The chord grid uses <strong>column-major order</strong>, which is different from reading a book. Here's how to read it:</p>
+
+            <div class="diagram">
+    Reading Order:
+    ┌─────┬─────┬─────┬─────┐
+    │  1  │  5  │  9  │ 13  │    Read DOWN each column,
+    │  2  │  6  │ 10  │ 14  │    then move RIGHT to the
+    │  3  │  7  │ 11  │ 15  │    next column.
+    │  4  │  8  │ 12  │ 16  │
+    └─────┴─────┴─────┴─────┘
+
+    Example (32 chord progression):
+    ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+    │  G  │  G  │  G  │  G  │  C  │  C  │  C  │  C  │
+    │  G  │  G  │  G  │  G  │  C  │  C  │  C  │  C  │
+    │  G  │  G  │  G  │  G  │  C  │  C  │  C  │  C  │
+    │  G  │  G  │  D  │  D  │  G  │  G  │  G  │  G  │
+    └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+
+    Plays as: G G G G | G G G D | G G G D | G G D D | C C C G | ...
+            </div>
+
+            <div class="alert alert-tip">
+                <strong>Tip:</strong> For bluegrass jams, each cell typically represents one beat (4 cells = 1 measure in 4/4 time). The grid naturally groups into 4-bar and 8-bar phrases.
+            </div>
+
+            <h3>Section Labels</h3>
+            <p>Sections are labeled above their chord grids:</p>
+            <ul>
+                <li><strong>Verse</strong> – Sung section</li>
+                <li><strong>Chorus</strong> – Repeated sung section</li>
+                <li><strong>Verse/Chorus</strong> – Same chords for both (common in bluegrass)</li>
+                <li><strong>Break</strong> – Instrumental solo section</li>
+                <li><strong>Intro</strong> – Opening chords before vocals</li>
+                <li><strong>Tag</strong> – Ending phrase (often repeated)</li>
+            </ul>
+
+            <h3>Ending Markers</h3>
+            <p>For songs with first/second endings, circled numbers appear above the columns indicating which ending to play:</p>
+
+            <div class="diagram">
+                    ①          ②
+    ┌─────┬─────┬─────┬─────┐
+    │  G  │  C  │  D  │  G  │    ① = First time through
+    │  G  │  C  │  G  │  G  │    ② = Second time (ending)
+    └─────┴─────┴─────┴─────┘
+            </div>
+
+            <h2 id="multiple-keys">Multiple Keys</h2>
+            <p>Charts automatically display the same song in multiple keys. This is essential for jam sessions where different instruments or vocalists prefer different keys.</p>
+
+            <div class="feature-box">
+                <h4>Common Key Pairings for Bluegrass</h4>
+                <ul>
+                    <li><strong>G and A</strong> – Most common; banjo-friendly keys</li>
+                    <li><strong>C and D</strong> – Common for vocal-forward songs</li>
+                    <li><strong>D and E</strong> – Higher energy keys</li>
+                    <li><strong>A and B</strong> – For songs that need extra brightness</li>
+                </ul>
+            </div>
+
+            <p>The transposition is handled automatically by JamBot's chord engine, respecting sharp/flat conventions for each key signature.</p>
+
+            <h2 id="draft-vs-approved">Draft vs. Approved Charts</h2>
+            <p>Charts go through a review workflow:</p>
+
+            <table class="format-table">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Appearance</th>
+                        <th>Meaning</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>draft</code></td>
+                        <td>"DRAFT" watermark at bottom</td>
+                        <td>AI-generated, needs human review</td>
+                    </tr>
+                    <tr>
+                        <td><code>approved</code></td>
+                        <td>No watermark</td>
+                        <td>Verified by jam leader</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p>Jam leaders can approve draft charts using the <code>/jambot-chart approve</code> command.</p>
+
+            <h2 id="future-formats">Future Formats</h2>
+            <p>We're planning additional chart formats for different use cases:</p>
+
+            <table class="format-table">
+                <thead>
+                    <tr>
+                        <th>Format</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>TNBGJ</td>
+                        <td>Two-panel landscape with chord grid</td>
+                        <td><span class="badge badge-default">Default</span></td>
+                    </tr>
+                    <tr>
+                        <td>Lead Sheet</td>
+                        <td>Chords above melody line (standard notation)</td>
+                        <td><span class="badge badge-coming">Coming Soon</span></td>
+                    </tr>
+                    <tr>
+                        <td>Nashville</td>
+                        <td>Nashville number system (1-4-5 notation)</td>
+                        <td><span class="badge badge-coming">Coming Soon</span></td>
+                    </tr>
+                    <tr>
+                        <td>Simple</td>
+                        <td>Portrait, text-only, minimal styling</td>
+                        <td><span class="badge badge-coming">Coming Soon</span></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="alert alert-info">
+                <strong>Want a different format?</strong> Let us know in the JamBot Discord or open an issue on GitHub. Format customization per server is on the roadmap.
+            </div>
+
+            <h2 id="technical-details">Technical Details</h2>
+            <p>For developers and curious users, here are the technical specs:</p>
+
+            <h3>PDF Specifications</h3>
+            <ul>
+                <li><strong>Page size:</strong> Letter (11" × 8.5") landscape</li>
+                <li><strong>Margins:</strong> 0.5" all sides</li>
+                <li><strong>Panel gap:</strong> 0.4"</li>
+                <li><strong>Grid cell size:</strong> 28pt × 24pt</li>
+                <li><strong>Title font:</strong> Georgia Bold 18pt (lyrics panel)</li>
+                <li><strong>Chart title font:</strong> Georgia Bold Italic 22pt</li>
+                <li><strong>Chord font:</strong> Georgia Bold 11pt</li>
+                <li><strong>Lyrics font:</strong> Georgia Regular 11pt</li>
+            </ul>
+
+            <h3>Data Model</h3>
+            <p>Charts are stored internally as JSON:</p>
+
+            <pre><code>{
+  "title": "Blue Ridge Cabin Home",
+  "chart_title": "Blue Ridge Cabin Home",
+  "keys": [
+    {
+      "key": "G",
+      "sections": [
+        {
+          "label": "Verse/Chorus",
+          "rows": 4,
+          "endings": null,
+          "chords": ["G", "G", "G", "G", "G", "G", "D", "D", ...]
+        }
+      ]
+    },
+    {
+      "key": "A",
+      "sections": [...]
+    }
+  ],
+  "lyrics": [
+    {
+      "label": "Verse 1",
+      "lines": [
+        "There's a well beaten path in the old mountainside",
+        "Where I wandered when I was a lad",
+        ...
+      ]
+    }
+  ],
+  "status": "approved"
+}</code></pre>
+
+            <p>This format allows for programmatic manipulation, transposition, and rendering to different output formats.</p>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>JamBot Documentation • Built for jam sessions everywhere</p>
+    </footer>
+</body>
+</html>

@@ -60,5 +60,8 @@ data/
 *.sln
 *.sw?
 
+# Test generated samples (PDFs)
+tests/samples/
+
 # OS specific
 .DS_Store

@@ -5,6 +5,16 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from typing import Dict, Any
 
+
+def pytest_addoption(parser):
+    """Add custom pytest options."""
+    parser.addoption(
+        "--save-samples",
+        action="store_true",
+        default=False,
+        help="Save generated PDF samples to tests/samples/",
+    )
+
 # Create temp directories for logs and data
 _temp_dir = tempfile.mkdtemp(prefix='jambot_test_')
 _log_dir = os.path.join(_temp_dir, 'logs')
