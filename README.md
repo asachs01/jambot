@@ -25,7 +25,9 @@ See the [Deployment Guide](DEPLOY_TO_DIGITALOCEAN.md) for detailed instructions.
 - **💾 Song Version Memory**: Remembers approved song versions across multiple jams for consistency
 - **✅ Admin Approval Workflow**: DM-based validation system with emoji reactions for song selection
 - **🔧 Manual Overrides**: Support for manual song replacement via commands
-- **📊 Persistent Storage**: SQLite database for song history and setlist tracking
+- **📊 Persistent Storage**: PostgreSQL database for song history and setlist tracking
+- **🎸 Chord Charts**: Create, view, and transpose chord charts with fuzzy title search (finds "Mountan Dew" → "Mountain Dew")
+- **⏱️ Rate Limiting**: Redis-based rate limiting (3 requests per 10 minutes) to prevent spam
 - **🐳 Container-Ready**: Docker support for easy deployment to DigitalOcean Container App
 
 ### Premium Features
@@ -59,6 +61,8 @@ See [AI Chord Charts Documentation](docs/ai-chord-charts.html) for details.
 - Python 3.11+
 - Discord Bot Token ([Setup Guide](SETUP_DISCORD.md))
 - Spotify API Credentials ([Setup Guide](SPOTIFY_SETUP.md))
+- PostgreSQL database (required for production)
+- Redis (optional, for rate limiting - bot works without it but rate limiting will be disabled)
 - Docker (optional, for containerized deployment)
 
 ### Installation
@@ -125,15 +129,26 @@ DISCORD_ADMIN_ID="987654321098765432"
 
 ### Docker Deployment (Local or Self-Hosted)
 
-1. Build and run the container:
+1. Build and run the container (includes Redis for rate limiting):
 ```bash
 docker-compose up -d
 ```
+
+This will start:
+- `jambot` - Main Discord bot
+- `redis` - Rate limiting backend (optional but recommended)
 
 2. View logs:
 ```bash
 docker-compose logs -f jambot
 ```
+
+3. Check Redis connection (optional):
+```bash
+docker-compose logs redis
+```
+
+**Note**: If Redis is unavailable, the bot will continue to work but rate limiting will be disabled.
 
 ### Cloud Deployment
 

@@ -181,12 +181,76 @@ If you want 2 people to approve songs:
 2. Run `/jambot-setup`
 3. Enter: `111222333, 444555666` in the Approvers field
 
+## Redis Configuration (Optional - Rate Limiting)
+
+Redis provides rate limiting for chord chart requests to prevent spam. The bot works without Redis, but rate limiting will be disabled.
+
+### Setting Up Redis
+
+**Option 1: Docker Compose (Recommended)**
+
+If using Docker, Redis is automatically configured via `docker-compose.yml`:
+
+```bash
+docker-compose up -d
+```
+
+Redis will be available at `redis://redis:6379/0` inside the container network.
+
+**Option 2: Manual Installation**
+
+For local development or custom deployments:
+
+1. Install Redis:
+```bash
+# macOS
+brew install redis
+brew services start redis
+
+# Ubuntu/Debian
+sudo apt install redis-server
+sudo systemctl start redis
+
+# Or use Docker
+docker run -d -p 6379:6379 redis:7-alpine
+```
+
+2. Set the `REDIS_URL` environment variable in `.env`:
+```bash
+REDIS_URL="redis://localhost:6379/0"
+```
+
+### Rate Limit Settings
+
+Current rate limits (hardcoded, can be customized in `src/bot.py`):
+- **Limit**: 3 chord chart requests per 10 minutes per user
+- **Applies to**: `/jambot-chart view`, `/jambot-chart transpose`, and `@jambot chart for <title>` mentions
+- **Does NOT apply to**: Creating new charts
+
+### Troubleshooting Redis
+
+If Redis is unavailable:
+- Bot logs: `"Rate limiting disabled - Redis connection failed"`
+- Chord chart commands will work normally without rate limiting
+- No user-facing errors
+
+To verify Redis is working:
+```bash
+# Check Redis logs
+docker-compose logs redis
+
+# Test connection
+redis-cli ping
+# Expected: PONG
+```
+
 ## Best Practices
 
 1. **Have at least 2 approvers** for redundancy
 2. **Test the configuration** by posting a test setlist
 3. **Keep your `.env` file secure** - it still contains sensitive Spotify credentials
 4. **Regularly review** who has jam leader and approver access
+5. **Use Redis in production** for rate limiting to prevent abuse
 
 ## Premium Environment Variables
 

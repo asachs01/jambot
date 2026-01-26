@@ -3,7 +3,7 @@ import psycopg2
 import psycopg2.extras
 import json
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from contextlib import contextmanager
 from src.config import Config
 from src.logger import logger
@@ -48,6 +48,11 @@ class Database:
 
     def _initialize_schema(self):
         """Create database tables if they don't exist."""
+        # Enable pg_trgm extension for fuzzy text matching
+        pg_trgm_setup = """
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        """
+
         schema = """
         CREATE TABLE IF NOT EXISTS songs (
             id SERIAL PRIMARY KEY,
@@ -166,10 +171,25 @@ class Database:
             created_by BIGINT NOT NULL,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW(),
+            alternate_titles JSONB,
+            source TEXT DEFAULT 'user_created',
+            status TEXT DEFAULT 'approved',
             UNIQUE(guild_id, title)
         );
 
         CREATE INDEX IF NOT EXISTS idx_chord_charts_guild_title ON chord_charts(guild_id, title);
+        CREATE INDEX IF NOT EXISTS idx_chord_charts_title_trgm ON chord_charts USING gin (title gin_trgm_ops);
+
+        CREATE TABLE IF NOT EXISTS generation_history (
+            id SERIAL PRIMARY KEY,
+            chart_id INTEGER REFERENCES chord_charts(id),
+            prompt TEXT NOT NULL,
+            response JSONB NOT NULL,
+            model TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_generation_history_chart_id ON generation_history(chart_id);
         """
 
         # Migration for existing databases: add setlist pattern columns if they don't exist
@@ -200,29 +220,26 @@ class Database:
                           WHERE table_name = 'active_workflows' AND column_name = 'initiated_by') THEN
                 ALTER TABLE active_workflows ADD COLUMN initiated_by BIGINT;
             END IF;
-
-            -- Premium API configuration columns
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_api_token_hash') THEN
-                ALTER TABLE bot_configuration ADD COLUMN premium_api_token_hash VARCHAR(72);
+                          WHERE table_name = 'chord_charts' AND column_name = 'alternate_titles') THEN
+                ALTER TABLE chord_charts ADD COLUMN alternate_titles JSONB;
             END IF;
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_enabled') THEN
-                ALTER TABLE bot_configuration ADD COLUMN premium_enabled BOOLEAN DEFAULT FALSE;
+                          WHERE table_name = 'chord_charts' AND column_name = 'source') THEN
+                ALTER TABLE chord_charts ADD COLUMN source TEXT DEFAULT 'user_created';
             END IF;
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_setup_by') THEN
-                ALTER TABLE bot_configuration ADD COLUMN premium_setup_by BIGINT;
+                          WHERE table_name = 'chord_charts' AND column_name = 'status') THEN
+                ALTER TABLE chord_charts ADD COLUMN status TEXT DEFAULT 'approved';
             END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'bot_configuration' AND column_name = 'premium_setup_at') THEN
-                ALTER TABLE bot_configuration ADD COLUMN premium_setup_at TIMESTAMP;
-            END IF;
+            -- Enable pg_trgm extension for fuzzy text search
+            CREATE EXTENSION IF NOT EXISTS pg_trgm;
         END $$;
         """
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute(pg_trgm_setup)
             cursor.execute(schema)
             cursor.execute(migration)
             logger.info("Database schema initialized successfully")
@@ -645,6 +662,9 @@ class Database:
         created_by: int,
         chart_title: Optional[str] = None,
         lyrics: Optional[List[Dict[str, Any]]] = None,
+        source: str = 'user_created',
+        status: str = 'approved',
+        alternate_titles: Optional[List[str]] = None,
     ) -> int:
         """Create or update a chord chart.
 
@@ -655,6 +675,9 @@ class Database:
             created_by: Discord user ID.
             chart_title: Optional abbreviated title.
             lyrics: Optional lyrics data.
+            source: Source of chart ('user_created' or 'ai_generated').
+            status: Chart status ('draft', 'approved', 'rejected').
+            alternate_titles: Optional list of alternate title spellings.
 
         Returns:
             Chart database ID.
@@ -665,12 +688,15 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO chord_charts
-                   (guild_id, title, chart_title, lyrics, keys, created_by)
-                   VALUES (%s, %s, %s, %s, %s, %s)
+                   (guild_id, title, chart_title, lyrics, keys, created_by, source, status, alternate_titles)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (guild_id, title) DO UPDATE SET
                        chart_title = EXCLUDED.chart_title,
                        lyrics = EXCLUDED.lyrics,
                        keys = EXCLUDED.keys,
+                       source = EXCLUDED.source,
+                       status = EXCLUDED.status,
+                       alternate_titles = EXCLUDED.alternate_titles,
                        updated_at = NOW()
                    RETURNING id""",
                 (
@@ -678,10 +704,13 @@ class Database:
                     json.dumps(lyrics) if lyrics else None,
                     json.dumps(keys),
                     created_by,
+                    source,
+                    status,
+                    json.dumps(alternate_titles) if alternate_titles else None,
                 )
             )
             chart_id = cursor.fetchone()[0]
-            logger.info(f"Created/updated chord chart '{title}' for guild {guild_id}")
+            logger.info(f"Created/updated chord chart '{title}' for guild {guild_id} (source={source}, status={status})")
             return chart_id
 
     def get_chord_chart(self, guild_id: int, title: str) -> Optional[Dict[str, Any]]:
@@ -705,8 +734,111 @@ class Database:
                 return dict(row)
             return None
 
+<<<<<<< HEAD
+    def fuzzy_search_chord_chart(self, guild_id: int, query: str) -> Optional[Dict[str, Any]]:
+        """Search for a chord chart using fuzzy text matching with pg_trgm.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            query: Search string (song title).
+
+        Returns:
+            Best matching chart dict if found, None otherwise.
+        """
+        import json
+        query_lower = query.lower()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # Try fuzzy match using pg_trgm similarity or alternate_titles array containment
+            cursor.execute(
+                """SELECT *
+                   FROM chord_charts
+                   WHERE guild_id = %s AND (
+                       LOWER(title) %% %s
+                       OR alternate_titles @> %s::jsonb
+                   )
+                   ORDER BY similarity(LOWER(title), %s) DESC
+                   LIMIT 1""",
+                (guild_id, query_lower, json.dumps([query_lower]), query_lower)
+            )
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def create_generation_history(
+        self,
+        chart_id: int,
+        prompt: str,
+        response: Dict[str, Any],
+        model: str
+    ) -> int:
+        """Create a generation history record for an AI-generated chart.
+
+        Args:
+            chart_id: Chart database ID.
+            prompt: LLM prompt used for generation.
+            response: Raw LLM response data.
+            model: Model identifier (e.g., 'gpt-4', 'claude-3-sonnet-20240229').
+
+        Returns:
+            Generation history ID.
+        """
+        import json
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO generation_history
+                   (chart_id, prompt, response, model)
+                   VALUES (%s, %s, %s, %s)
+                   RETURNING id""",
+                (chart_id, prompt, json.dumps(response), model)
+            )
+            history_id = cursor.fetchone()[0]
+            logger.info(f"Created generation history {history_id} for chart {chart_id} using {model}")
+            return history_id
+
+    def search_chord_charts_fuzzy(
+        self, guild_id: int, query: str, threshold: float = 0.3
+    ) -> List[Dict[str, Any]]:
+        """Search chord charts using fuzzy trigram matching.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            query: Search string.
+            threshold: Similarity threshold (0.0-1.0), default 0.3.
+
+        Returns:
+            List of matching chart dicts ordered by similarity score (highest first).
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            try:
+                cursor.execute(
+                    """SELECT *, similarity(title, %s) as sim_score
+                       FROM chord_charts
+                       WHERE guild_id = %s AND similarity(title, %s) > %s
+                       ORDER BY sim_score DESC
+                       LIMIT 10""",
+                    (query, guild_id, query, threshold)
+                )
+                return [dict(row) for row in cursor.fetchall()]
+            except Exception as e:
+                # Fallback if pg_trgm not available
+                logger.warning(f"pg_trgm fuzzy search failed, falling back to ILIKE: {e}")
+                cursor.execute(
+                    "SELECT * FROM chord_charts WHERE guild_id = %s AND title ILIKE %s ORDER BY title LIMIT 10",
+                    (guild_id, f"%{query}%")
+                )
+                return [dict(row) for row in cursor.fetchall()]
+
     def search_chord_charts(self, guild_id: int, query: str) -> List[Dict[str, Any]]:
-        """Search chord charts by title (case-insensitive, substring match).
+        """Search chord charts by title (case-insensitive, substring match with fuzzy fallback).
+
+        First attempts exact ILIKE match. If no results, automatically retries with fuzzy matching
+        at threshold 0.3 for better user experience.
 
         Args:
             guild_id: Discord guild (server) ID.
@@ -717,11 +849,19 @@ class Database:
         """
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # First try exact ILIKE match (current behavior)
             cursor.execute(
                 "SELECT * FROM chord_charts WHERE guild_id = %s AND title ILIKE %s ORDER BY title",
                 (guild_id, f"%{query}%")
             )
-            return [dict(row) for row in cursor.fetchall()]
+            results = [dict(row) for row in cursor.fetchall()]
+
+            # If no results, try fuzzy search as fallback
+            if not results:
+                logger.info(f"No exact matches for '{query}', trying fuzzy search")
+                results = self.search_chord_charts_fuzzy(guild_id, query, threshold=0.3)
+
+            return results
 
     def list_chord_charts(self, guild_id: int) -> List[Dict[str, Any]]:
         """List all chord charts for a guild.
@@ -739,6 +879,51 @@ class Database:
                 (guild_id,)
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def list_chord_charts_filtered(
+        self,
+        guild_id: int,
+        status: Optional[str] = None,
+        limit: int = 10,
+        offset: int = 0
+    ) -> tuple:
+        """List chord charts with optional status filter and pagination.
+
+        Args:
+            guild_id: Discord guild (server) ID.
+            status: Filter by status ('pending'|'approved'|'rejected'|None for all).
+            limit: Results per page (default 10).
+            offset: Skip N results (for pagination).
+
+        Returns:
+            Tuple of (chart_list, total_count).
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Build WHERE clause
+            where_clause = "WHERE guild_id = %s"
+            params = [guild_id]
+
+            if status and status != 'all':
+                where_clause += " AND status = %s"
+                params.append(status)
+
+            # Get total count
+            cursor.execute(f"SELECT COUNT(*) as count FROM chord_charts {where_clause}", params)
+            total = cursor.fetchone()['count']
+
+            # Get paginated results
+            query = f"""
+                SELECT id, title, chart_title, status, created_by, created_at
+                FROM chord_charts {where_clause}
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """
+            params.extend([limit, offset])
+            cursor.execute(query, params)
+
+            return [dict(row) for row in cursor.fetchall()], total
 
     def update_chord_chart_keys(
         self, guild_id: int, title: str, keys: List[Dict[str, Any]]
@@ -760,111 +945,72 @@ class Database:
             )
             logger.info(f"Updated keys for chart '{title}' in guild {guild_id}")
 
-    # --- Premium Configuration Methods ---
-
-    def save_premium_config(
+    def update_chord_chart_status(
         self,
         guild_id: int,
-        token_hash: str,
-        setup_by: int
-    ) -> bool:
-        """Save premium API configuration for a guild.
+        title: str,
+        status: str,
+        approved_by: Optional[int] = None
+    ):
+        """Update the status of a chord chart.
 
         Args:
             guild_id: Discord guild (server) ID.
-            token_hash: Bcrypt hash of the premium API token.
-            setup_by: Discord user ID who set up premium.
-
-        Returns:
-            True if successful, False if guild has no bot configuration.
+            title: Song title.
+            status: New status ('draft', 'approved', 'archived').
+            approved_by: User ID who approved (if status is 'approved').
         """
-        # Check if configuration exists
-        config = self.get_bot_configuration(guild_id)
-        if not config:
-            logger.warning(f"Cannot save premium config: no bot configuration found for guild {guild_id}")
-            return False
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """UPDATE bot_configuration
-                   SET premium_api_token_hash = %s,
-                       premium_enabled = TRUE,
-                       premium_setup_by = %s,
-                       premium_setup_at = NOW(),
-                       updated_at = NOW()
-                   WHERE guild_id = %s""",
-                (token_hash, setup_by, guild_id)
-            )
-            logger.info(f"Saved premium configuration for guild {guild_id}")
-            return True
+            if status == 'approved' and approved_by is not None:
+                cursor.execute(
+                    """UPDATE chord_charts
+                       SET status = %s, approved_by = %s, approved_at = NOW(), updated_at = NOW()
+                       WHERE guild_id = %s AND title = %s""",
+                    (status, approved_by, guild_id, title)
+                )
+            else:
+                cursor.execute(
+                    """UPDATE chord_charts
+                       SET status = %s, updated_at = NOW()
+                       WHERE guild_id = %s AND title = %s""",
+                    (status, guild_id, title)
+                )
+            logger.info(f"Updated status to '{status}' for chart '{title}' in guild {guild_id}")
 
-    def get_premium_config(self, guild_id: int) -> Optional[Dict[str, Any]]:
-        """Get premium configuration for a guild.
+    def get_draft_charts(self, guild_id: int) -> List[Dict[str, Any]]:
+        """List all draft chord charts for a guild.
 
         Args:
             guild_id: Discord guild (server) ID.
 
         Returns:
-            Dictionary with premium config data if found, None otherwise.
-            Keys: 'premium_api_token_hash', 'premium_enabled', 'premium_setup_by', 'premium_setup_at'
+            List of draft chart dicts.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute(
-                """SELECT premium_api_token_hash, premium_enabled,
-                          premium_setup_by, premium_setup_at
-                   FROM bot_configuration WHERE guild_id = %s""",
+                "SELECT * FROM chord_charts WHERE guild_id = %s AND status = 'draft' ORDER BY title",
                 (guild_id,)
             )
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
+            return [dict(row) for row in cursor.fetchall()]
 
-    def is_premium_enabled(self, guild_id: int) -> bool:
-        """Check if premium is enabled for a guild.
+    def get_approved_charts(self, guild_id: int) -> List[Dict[str, Any]]:
+        """List all approved chord charts for a guild.
 
         Args:
             guild_id: Discord guild (server) ID.
 
         Returns:
-            True if premium is enabled, False otherwise.
+            List of approved chart dicts.
         """
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute(
-                "SELECT premium_enabled FROM bot_configuration WHERE guild_id = %s",
+                "SELECT * FROM chord_charts WHERE guild_id = %s AND status = 'approved' ORDER BY title",
                 (guild_id,)
             )
-            row = cursor.fetchone()
-            if row and row[0]:
-                return True
-            return False
-
-    def disable_premium(self, guild_id: int) -> bool:
-        """Disable premium for a guild (keeps token hash for potential re-enable).
-
-        Args:
-            guild_id: Discord guild (server) ID.
-
-        Returns:
-            True if successful, False if guild has no bot configuration.
-        """
-        config = self.get_bot_configuration(guild_id)
-        if not config:
-            return False
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """UPDATE bot_configuration
-                   SET premium_enabled = FALSE, updated_at = NOW()
-                   WHERE guild_id = %s""",
-                (guild_id,)
-            )
-            logger.info(f"Disabled premium for guild {guild_id}")
-            return True
+            return [dict(row) for row in cursor.fetchall()]
 
     def save_workflow(self, workflow_data: Dict, summary_message_id: int) -> None:
         """Save or update workflow to database.
