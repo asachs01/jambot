@@ -1116,14 +1116,30 @@ class Database:
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            # First get the chart ID
             cursor.execute(
-                "DELETE FROM chord_charts WHERE guild_id = %s AND title = %s",
+                "SELECT id FROM chord_charts WHERE guild_id = %s AND title = %s",
                 (guild_id, title)
             )
-            deleted = cursor.rowcount > 0
-            if deleted:
-                logger.info(f"Deleted chart '{title}' from guild {guild_id}")
-            return deleted
+            row = cursor.fetchone()
+            if not row:
+                return False
+
+            chart_id = row[0]
+
+            # Delete related generation history first (foreign key constraint)
+            cursor.execute(
+                "DELETE FROM generation_history WHERE chart_id = %s",
+                (chart_id,)
+            )
+
+            # Now delete the chart
+            cursor.execute(
+                "DELETE FROM chord_charts WHERE id = %s",
+                (chart_id,)
+            )
+            logger.info(f"Deleted chart '{title}' (id={chart_id}) from guild {guild_id}")
+            return True
 
     def get_draft_charts(self, guild_id: int) -> List[Dict[str, Any]]:
         """List all draft chord charts for a guild.
