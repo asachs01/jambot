@@ -684,14 +684,29 @@ class ChartCommands:
                 model='premium_api',
             )
 
-            # Generate PDF
-            chart_data = {
+            # Generate PDF via API (uses correct TNBGJ format)
+            # Build chart data in API format
+            api_chart_data = {
                 'title': chart_title,
-                'keys': keys,
+                'key': chart_key,
+                'sections': [{'label': s['label'], 'chords': s['chords']} for s in sections],
                 'lyrics': lyrics,
-                'status': 'draft',
             }
-            pdf_buf = generate_chart_pdf(chart_data)
+
+            try:
+                pdf_bytes = await client.render_pdf(token, api_chart_data)
+                pdf_buf = io.BytesIO(pdf_bytes)
+            except Exception as pdf_error:
+                logger.warning(f"API PDF render failed, falling back to local: {pdf_error}")
+                # Fallback to local PDF generation if API fails
+                local_chart_data = {
+                    'title': chart_title,
+                    'keys': keys,
+                    'lyrics': lyrics,
+                    'status': 'draft',
+                }
+                pdf_buf = generate_chart_pdf(local_chart_data)
+
             filename = f"{chart_title.replace(' ', '_')}.pdf"
             file = discord.File(fp=pdf_buf, filename=filename)
 

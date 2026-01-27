@@ -54,6 +54,7 @@ class GeneratedChart:
     credits_remaining: int
     generation_id: Optional[str]
     error: Optional[str] = None
+    data_source: Optional[str] = None  # "cache", "ultimate_guitar", "ai_generated"
 
 
 class PremiumClient:
@@ -273,7 +274,8 @@ class PremiumClient:
                 success=response.get("success", False),
                 chart=response.get("chart"),
                 credits_remaining=response.get("credits_remaining", 0),
-                generation_id=response.get("generation_id")
+                generation_id=response.get("generation_id"),
+                data_source=response.get("data_source")
             )
         except InsufficientCreditsError as e:
             # Return a failed result instead of raising for easier handling
@@ -284,6 +286,123 @@ class PremiumClient:
                 generation_id=None,
                 error="insufficient_credits"
             )
+
+    async def generate_chart_pdf(
+        self,
+        token: str,
+        guild_id: int,
+        title: str,
+        artist: Optional[str] = None,
+        key: Optional[str] = None
+    ) -> bytes:
+        """Generate a chord chart PDF directly from the premium API.
+
+        This uses the API's PDF rendering (TNBGJ songbook format) rather than
+        local PDF generation. Returns the raw PDF bytes.
+
+        Args:
+            token: Premium API token.
+            guild_id: Discord guild ID.
+            title: Song title to generate chart for.
+            artist: Optional artist name for better results.
+            key: Optional key to generate the chart in.
+
+        Returns:
+            PDF file bytes.
+
+        Raises:
+            InvalidTokenError: If token is invalid.
+            InsufficientCreditsError: If not enough credits.
+            APIConnectionError: If connection fails.
+        """
+        logger.info(f"Generating chart PDF for '{title}' in guild {guild_id}")
+
+        url = f"{self.base_url}/api/v1/generate?format=pdf"
+        headers = self._get_headers(token)
+
+        data = {
+            "title": title,
+            "guild_id": guild_id
+        }
+        if artist:
+            data["artist"] = artist
+        if key:
+            data["key"] = key
+
+        try:
+            session = await self._get_session()
+            async with session.post(url, headers=headers, json=data) as response:
+                # Handle errors
+                if response.status == 401:
+                    raise InvalidTokenError("Invalid or expired API token")
+                if response.status == 402:
+                    body = await response.json()
+                    raise InsufficientCreditsError(
+                        "Insufficient credits",
+                        credits_remaining=body.get("credits_remaining", 0),
+                        purchase_url=body.get("purchase_url")
+                    )
+                if response.status >= 500:
+                    raise APIServerError(f"Premium API server error: {response.status}")
+                if response.status >= 400:
+                    body = await response.json()
+                    raise PremiumAPIError(f"Premium API error: {response.status} - {body.get('error', 'Unknown')}")
+
+                # Return PDF bytes
+                return await response.read()
+
+        except aiohttp.ClientConnectorError as e:
+            logger.error(f"Failed to connect to Premium API: {e}")
+            raise APIConnectionError(f"Unable to connect to Premium API: {e}")
+        except asyncio.TimeoutError:
+            logger.error(f"Premium API request timed out after {self.timeout}s")
+            raise APIConnectionError(f"Premium API request timed out after {self.timeout}s")
+
+    async def render_pdf(
+        self,
+        token: str,
+        chart_data: Dict[str, Any]
+    ) -> bytes:
+        """Render chart data to PDF using the API's TNBGJ format.
+
+        This does NOT charge credits - it only renders existing chart data
+        that was previously generated.
+
+        Args:
+            token: Premium API token.
+            chart_data: Chart data dict with title, key, sections, and optional lyrics.
+
+        Returns:
+            PDF file bytes.
+
+        Raises:
+            InvalidTokenError: If token is invalid.
+            APIConnectionError: If connection fails.
+        """
+        logger.info(f"Rendering PDF for '{chart_data.get('title', 'Unknown')}'")
+
+        url = f"{self.base_url}/api/v1/render-pdf"
+        headers = self._get_headers(token)
+
+        try:
+            session = await self._get_session()
+            async with session.post(url, headers=headers, json=chart_data) as response:
+                if response.status == 401:
+                    raise InvalidTokenError("Invalid or expired API token")
+                if response.status >= 500:
+                    raise APIServerError(f"Premium API server error: {response.status}")
+                if response.status >= 400:
+                    body = await response.json()
+                    raise PremiumAPIError(f"Premium API error: {response.status} - {body.get('error', 'Unknown')}")
+
+                return await response.read()
+
+        except aiohttp.ClientConnectorError as e:
+            logger.error(f"Failed to connect to Premium API: {e}")
+            raise APIConnectionError(f"Unable to connect to Premium API: {e}")
+        except asyncio.TimeoutError:
+            logger.error(f"Premium API request timed out after {self.timeout}s")
+            raise APIConnectionError(f"Premium API request timed out after {self.timeout}s")
 
     async def get_checkout_url(
         self,
