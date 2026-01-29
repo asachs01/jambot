@@ -1729,42 +1729,62 @@ class JambotCommands:
 
                 await interaction.response.defer(ephemeral=True)
 
-                # Get the stored token (we need to retrieve it for API calls)
+                # Get the stored token for API calls
                 premium_config = self.db.get_premium_config(guild_id)
-                if not premium_config or not premium_config.get('premium_api_token_hash'):
+                token = premium_config.get('premium_api_token') if premium_config else None
+
+                if not token:
                     await interaction.followup.send(
                         "Premium configuration error. Please run `/jambot-premium-setup` again.",
                         ephemeral=True
                     )
                     return
 
-                # Note: We can't use the hashed token directly - we'd need to store the
-                # token securely or require re-entry. For MVP, we'll show a message
-                # to use the premium portal for detailed balance info.
-                # This is a security tradeoff - storing unhashed tokens is risky.
+                # Fetch credit balance from the API
+                try:
+                    async with PremiumClient() as client:
+                        credits = await client.get_credits(token, guild_id)
 
-                # For now, show a generic message suggesting the portal
-                embed = discord.Embed(
-                    title="Premium Credits",
-                    description=(
-                        "Use the premium portal for detailed credit information:\n"
-                        "https://premium.jambot.app/dashboard\n\n"
-                        "_Credit balance is also shown after each chart generation._"
-                    ),
-                    color=discord.Color.gold()
-                )
-                embed.add_field(
-                    name="Premium Status",
-                    value="Enabled",
-                    inline=True
-                )
-                embed.add_field(
-                    name="Need More Credits?",
-                    value="Use `/jambot-buy-credits`",
-                    inline=True
-                )
+                    embed = discord.Embed(
+                        title="Premium Credits",
+                        color=discord.Color.gold()
+                    )
 
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                    # Show trial credits if available
+                    if credits.trial_credits_remaining > 0:
+                        embed.add_field(
+                            name="Trial Credits",
+                            value=f"**{credits.trial_credits_remaining}** remaining",
+                            inline=True
+                        )
+
+                    embed.add_field(
+                        name="Purchased Credits",
+                        value=f"**{credits.credits_remaining}** remaining",
+                        inline=True
+                    )
+
+                    embed.add_field(
+                        name="Lifetime Purchased",
+                        value=f"{credits.lifetime_purchased} credits",
+                        inline=True
+                    )
+
+                    embed.set_footer(text="Use /jambot-buy-credits to purchase more")
+
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+
+                except InvalidTokenError:
+                    await interaction.followup.send(
+                        "Your premium token is invalid or expired. "
+                        "Please run `/jambot-premium-setup` to reconfigure.",
+                        ephemeral=True
+                    )
+                except APIConnectionError as e:
+                    await interaction.followup.send(
+                        f"Unable to connect to premium service: {str(e)}",
+                        ephemeral=True
+                    )
 
             except Exception as e:
                 logger.error(f"Error in credits command: {e}", exc_info=True)
