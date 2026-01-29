@@ -504,7 +504,7 @@ class PremiumSetupModal(Modal, title="Configure Premium Access"):
                     if not result.get("valid", False):
                         await interaction.followup.send(
                             "Invalid API token. Please check your token and try again.\n\n"
-                            "You can get a premium token at https://premium.jambot.io",
+                            "You can get a premium token at https://premium.jambot.app",
                             ephemeral=True
                         )
                         return
@@ -515,7 +515,7 @@ class PremiumSetupModal(Modal, title="Configure Premium Access"):
             except InvalidTokenError:
                 await interaction.followup.send(
                     "Invalid or expired API token. Please check your token and try again.\n\n"
-                    "You can get a premium token at https://premium.jambot.io",
+                    "You can get a premium token at https://premium.jambot.app",
                     ephemeral=True
                 )
                 return
@@ -1722,7 +1722,7 @@ class JambotCommands:
                         "Premium access is required for AI chord chart generation.\n\n"
                         "Get started with **5 free trial generations**!\n"
                         "Use `/jambot-premium-setup` to configure your premium token.\n\n"
-                        "_Visit https://premium.jambot.io to get a token._",
+                        "_Visit https://premium.jambot.app to get a token._",
                         ephemeral=True
                     )
                     return
@@ -1748,7 +1748,7 @@ class JambotCommands:
                     title="Premium Credits",
                     description=(
                         "Use the premium portal for detailed credit information:\n"
-                        "https://premium.jambot.io/dashboard\n\n"
+                        "https://premium.jambot.app/dashboard\n\n"
                         "_Credit balance is also shown after each chart generation._"
                     ),
                     color=discord.Color.gold()
@@ -1809,7 +1809,7 @@ class JambotCommands:
                         "**Premium not configured**\n\n"
                         "You need to configure premium access first.\n"
                         "Use `/jambot-premium-setup` to get started with **5 free trial generations**!\n\n"
-                        "_Visit https://premium.jambot.io to get a token._",
+                        "_Visit https://premium.jambot.app to get a token._",
                         ephemeral=True
                     )
                     return
@@ -1841,7 +1841,7 @@ class JambotCommands:
                     embed=embed,
                     content=(
                         "**To purchase credits:**\n"
-                        "Visit https://premium.jambot.io/buy\n\n"
+                        "Visit https://premium.jambot.app/buy\n\n"
                         "_Credits are applied immediately after payment._"
                     ),
                     ephemeral=True

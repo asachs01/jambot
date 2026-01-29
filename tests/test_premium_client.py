@@ -318,7 +318,7 @@ class TestPremiumClientGenerateChart:
         mock_response.json = AsyncMock(return_value={
             'error': 'Insufficient credits',
             'credits_remaining': 0,
-            'purchase_url': 'https://premium.jambot.io/purchase'
+            'purchase_url': 'https://premium.jambot.app/purchase'
         })
 
         with patch.object(client, '_get_session') as mock_get_session:

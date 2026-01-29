@@ -221,7 +221,7 @@ class CreateChartView(ui.View):
                 "Creating chord charts requires premium access.\n\n"
                 "**Get started with 5 free trial generations!**\n"
                 "Use `/jambot-premium-setup` to configure your premium token.\n\n"
-                "_Visit https://premium.jambot.io to get a token._",
+                "_Visit https://premium.jambot.app to get a token._",
                 ephemeral=True
             )
             return
@@ -541,7 +541,7 @@ class ChartCommands:
                 "Creating chord charts requires premium access.\n\n"
                 "**Get started with 5 free trial generations!**\n"
                 "Use `/jambot-premium-setup` to configure your premium token.\n\n"
-                "_Visit https://premium.jambot.io to get a token._\n\n"
+                "_Visit https://premium.jambot.app to get a token._\n\n"
                 "---\n"
                 "_Note: Viewing and transposing existing charts is always free._",
                 ephemeral=True
@@ -817,7 +817,7 @@ class ChartCommands:
                 "AI chord chart generation requires premium access.\n\n"
                 "**Get started with 5 free trial generations!**\n"
                 "Use `/jambot-premium-setup` to configure your premium token.\n\n"
-                "_Visit https://premium.jambot.io to get a token._",
+                "_Visit https://premium.jambot.app to get a token._",
                 ephemeral=True
             )
             return
@@ -1118,7 +1118,7 @@ class ChartCommands:
                     "Creating chord charts requires premium access.\n\n"
                     "**Get started with 5 free trial generations!**\n"
                     "Use `/jambot-premium-setup` to configure your premium token.\n\n"
-                    "_Visit https://premium.jambot.io to get a token._"
+                    "_Visit https://premium.jambot.app to get a token._"
                 )
                 return
 
