@@ -1833,17 +1833,30 @@ class JambotCommands:
                         inline=False
                     )
 
-                embed.set_footer(text="Purchase links are generated via secure Stripe checkout")
+                embed.set_footer(text="Click a button below to purchase via Stripe")
 
-                # For the view, we need the token. Since we only store the hash,
-                # we'll redirect to the portal for purchases
+                # Get the premium token for generating checkout URLs
+                premium_config = self.db.get_premium_config(guild_id)
+                token = premium_config.get('premium_api_token') if premium_config else None
+
+                if not token:
+                    await interaction.response.send_message(
+                        embed=embed,
+                        content=(
+                            "**To purchase credits:**\n"
+                            "Visit https://premium.jambot.app\n\n"
+                            "_Run `/jambot-premium-setup` first to enable purchases._"
+                        ),
+                        ephemeral=True
+                    )
+                    return
+
+                # Create view with purchase buttons
+                view = CreditPackSelectView(self.db, guild_id, token)
+
                 await interaction.response.send_message(
                     embed=embed,
-                    content=(
-                        "**To purchase credits:**\n"
-                        "Visit https://premium.jambot.app/buy\n\n"
-                        "_Credits are applied immediately after payment._"
-                    ),
+                    view=view,
                     ephemeral=True
                 )
 
