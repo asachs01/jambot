@@ -1,7 +1,7 @@
 """HTTP client for JamBot Premium API service."""
 import aiohttp
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from enum import Enum
 
@@ -55,6 +55,17 @@ class GeneratedChart:
     generation_id: Optional[str]
     error: Optional[str] = None
     data_source: Optional[str] = None  # "cache", "ultimate_guitar", "ai_generated"
+
+
+@dataclass
+class TransposedChart:
+    """Result of a chart transposition request."""
+    success: bool
+    chart: Optional[Dict[str, Any]]
+    original_key: str
+    target_key: str
+    semitones: int
+    error: Optional[str] = None
 
 
 class PremiumClient:
@@ -441,6 +452,161 @@ class PremiumClient:
 
         response = await self._request("POST", "/api/v1/checkout", token, data=data)
         return response.get("checkout_url", "")
+
+    async def render_pdf(self, token: str, chart_data: Dict[str, Any]) -> bytes:
+        """Render a chord chart to PDF via the premium API.
+
+        This endpoint does NOT consume credits - it only renders existing chart data.
+
+        Args:
+            token: Premium API token.
+            chart_data: Chart data dict with title, key, sections, and optional lyrics.
+                Must conform to the ChartData schema:
+                - title: str
+                - key: str
+                - sections: List[{label: str, chords: List[str], rows: int}]
+                - lyrics: Optional[List[{label: str, lines: List[str]}]]
+
+        Returns:
+            PDF file bytes.
+
+        Raises:
+            InvalidTokenError: If token is invalid.
+            APIConnectionError: If connection fails.
+            PremiumAPIError: If chart data is invalid.
+        """
+        logger.debug(f"Rendering PDF for chart: {chart_data.get('title', 'Unknown')}")
+
+        url = f"{self.base_url}/api/v1/render-pdf"
+        headers = self._get_headers(token)
+
+        try:
+            session = await self._get_session()
+            async with session.post(url, headers=headers, json=chart_data) as response:
+                if response.status == 401:
+                    raise InvalidTokenError("Invalid or expired API token")
+
+                if response.status >= 400:
+                    try:
+                        body = await response.json()
+                        error_msg = body.get("error", "Unknown error")
+                    except Exception:
+                        error_msg = await response.text()
+                    raise PremiumAPIError(f"PDF render failed: {response.status} - {error_msg}")
+
+                return await response.read()
+
+        except aiohttp.ClientConnectorError as e:
+            logger.error(f"Failed to connect to Premium API: {e}")
+            raise APIConnectionError(f"Unable to connect to Premium API: {e}")
+        except asyncio.TimeoutError:
+            logger.error(f"Premium API request timed out after {self.timeout}s")
+            raise APIConnectionError(f"Premium API request timed out after {self.timeout}s")
+
+    async def transpose_chart(
+        self,
+        token: str,
+        chart_data: Dict[str, Any],
+        target_key: str
+    ) -> TransposedChart:
+        """Transpose a chord chart to a different key via the premium API.
+
+        This endpoint does NOT consume credits - it only transforms existing data.
+
+        Args:
+            token: Premium API token.
+            chart_data: Chart data dict conforming to ChartData schema.
+            target_key: Target key to transpose to (e.g., 'G', 'Am', 'Bb').
+
+        Returns:
+            TransposedChart with the transposed chart data.
+
+        Raises:
+            InvalidTokenError: If token is invalid.
+            APIConnectionError: If connection fails.
+            PremiumAPIError: If transposition fails (e.g., invalid key).
+        """
+        logger.debug(f"Transposing chart '{chart_data.get('title')}' to key {target_key}")
+
+        data = {
+            "chart": chart_data,
+            "target_key": target_key
+        }
+
+        try:
+            response = await self._request("POST", "/api/v1/transpose", token, data=data)
+
+            return TransposedChart(
+                success=response.get("success", False),
+                chart=response.get("chart"),
+                original_key=response.get("original_key", ""),
+                target_key=response.get("target_key", target_key),
+                semitones=response.get("semitones", 0),
+                error=response.get("error")
+            )
+        except PremiumAPIError as e:
+            return TransposedChart(
+                success=False,
+                chart=None,
+                original_key=chart_data.get("key", ""),
+                target_key=target_key,
+                semitones=0,
+                error=str(e)
+            )
+
+    async def create_manual_chart(
+        self,
+        token: str,
+        guild_id: int,
+        title: str,
+        key: str,
+        sections: List[Dict[str, Any]],
+        lyrics: Optional[List[Dict[str, Any]]] = None,
+        render_pdf: bool = False
+    ) -> Dict[str, Any]:
+        """Create a chart from manual user input and optionally render to PDF.
+
+        This method does NOT consume credits - it's for user-created charts, not AI generation.
+        The chart data is validated and formatted, then optionally rendered to PDF.
+
+        Args:
+            token: Premium API token.
+            guild_id: Discord guild ID.
+            title: Song title.
+            key: Key string (e.g., 'G', 'Am').
+            sections: List of section dicts with 'label', 'chords', and optional 'rows'.
+            lyrics: Optional list of lyric dicts with 'label' and 'lines'.
+            render_pdf: If True, also render and return PDF bytes.
+
+        Returns:
+            Dict with:
+                - chart: The formatted chart data
+                - pdf_bytes: PDF bytes if render_pdf=True, else None
+
+        Raises:
+            InvalidTokenError: If token is invalid.
+            APIConnectionError: If connection fails.
+        """
+        logger.info(f"Creating manual chart: title='{title}', key='{key}', guild={guild_id}")
+
+        # Build chart data in the format expected by the premium API
+        chart_data = {
+            "title": title,
+            "key": key,
+            "sections": sections,
+        }
+        if lyrics:
+            chart_data["lyrics"] = lyrics
+
+        result = {
+            "chart": chart_data,
+            "pdf_bytes": None
+        }
+
+        if render_pdf:
+            result["pdf_bytes"] = await self.render_pdf(token, chart_data)
+
+        return result
 
     async def __aenter__(self):
         """Async context manager entry."""

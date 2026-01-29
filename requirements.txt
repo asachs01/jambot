@@ -21,7 +21,8 @@ redis==5.2.1
 # logging is built into Python
 
 # PDF Generation
-reportlab==4.1.0
+# NOTE: ReportLab removed - PDF generation now handled by premium-api
+# See Task 12 for refactoring chart_commands.py to use premium API
 
 # Web Server for Setup
 Flask==3.0.0

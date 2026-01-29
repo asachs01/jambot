@@ -1,25 +1,202 @@
-"""Discord slash commands and mention handler for chord chart management."""
+"""Discord slash commands and mention handler for chord chart management.
+
+This module handles all Discord interactions for chord chart management.
+PDF generation, chord parsing, and transposition are handled by the Premium API.
+"""
 import re
 import io
+import math
 import discord
 from discord import app_commands, ui
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from src.logger import logger
 from src.database import Database
-from src.chart_generator import (
-    generate_chart_pdf,
-    parse_chord_input,
-    transpose_key_entry,
-    note_to_index,
-)
 from src.llm_client import LLMClient
 from src.premium_client import (
     PremiumClient,
     InvalidTokenError,
     InsufficientCreditsError,
     APIConnectionError,
+    PremiumAPIError,
 )
+
+
+# ============================================================================
+# LOCAL HELPER FUNCTIONS
+# These functions provide minimal local functionality for data transformation
+# before sending to the Premium API. The Premium API handles all heavy lifting.
+# ============================================================================
+
+def parse_chord_input_local(
+    title: str,
+    key: str,
+    section_labels: str,
+    chords_text: str,
+    lyrics_text: Optional[str] = None
+) -> Dict[str, Any]:
+    """Parse modal input into chart data structure for Premium API.
+
+    This function transforms user input from Discord modals into the format
+    expected by the Premium API (ChartData schema).
+
+    Args:
+        title: Song title.
+        key: Key string (e.g., 'G', 'Am').
+        section_labels: Comma-separated section labels (e.g., 'Verse,Chorus').
+        chords_text: Chord progression text. Sections separated by blank lines.
+        lyrics_text: Optional lyrics text. Sections separated by blank lines.
+
+    Returns:
+        Dict with title, key, sections, and optional lyrics in Premium API format.
+    """
+    labels = [s.strip() for s in section_labels.split(',') if s.strip()]
+    chord_sections_raw = [
+        block.strip() for block in chords_text.strip().split('\n\n') if block.strip()
+    ]
+    # If no blank-line separation, treat each line as a section
+    if len(chord_sections_raw) == 1 and '\n' in chord_sections_raw[0]:
+        chord_sections_raw = [
+            line.strip() for line in chord_sections_raw[0].split('\n') if line.strip()
+        ]
+
+    sections = []
+    for i, raw in enumerate(chord_sections_raw):
+        label = labels[i] if i < len(labels) else f"Section {i + 1}"
+        # Parse chords: split by | for measures, spaces for beats
+        chords = []
+        measures = [m.strip() for m in raw.replace('|', '\n').split('\n') if m.strip()]
+        for measure in measures:
+            measure_chords = [c.strip() for c in measure.split() if c.strip()]
+            chords.extend(measure_chords)
+
+        # TNBGJ songbook format: 8 columns, 4 rows standard
+        cols = 8
+        rows = max(4, math.ceil(len(chords) / cols))
+
+        sections.append({
+            'label': label,
+            'chords': chords,
+            'rows': rows,
+        })
+
+    # Parse lyrics into Premium API format
+    lyrics = None
+    if lyrics_text and lyrics_text.strip():
+        lyric_blocks = [
+            block.strip() for block in lyrics_text.strip().split('\n\n') if block.strip()
+        ]
+        lyrics = []
+        for i, block in enumerate(lyric_blocks):
+            label = labels[i] if i < len(labels) else f"Section {i + 1}"
+            lines = [line.strip() for line in block.split('\n') if line.strip()]
+            lyrics.append({'label': label, 'lines': lines})
+
+    return {
+        'title': title,
+        'key': key,
+        'sections': sections,
+        'lyrics': lyrics,
+    }
+
+
+def convert_db_chart_to_api_format(chart: Dict[str, Any], key_index: int = 0) -> Dict[str, Any]:
+    """Convert a chart from database format to Premium API ChartData format.
+
+    The database stores charts with a 'keys' array (for multiple key variants).
+    The Premium API expects a single 'key' string and 'sections' array.
+
+    Args:
+        chart: Chart dict from database with 'keys' array.
+        key_index: Index of the key variant to use (default 0, the first key).
+
+    Returns:
+        Dict in Premium API ChartData format.
+    """
+    keys = chart.get('keys', [])
+    if not keys:
+        return {
+            'title': chart.get('title', 'Unknown'),
+            'key': 'C',
+            'sections': [],
+            'lyrics': chart.get('lyrics'),
+        }
+
+    key_entry = keys[key_index] if key_index < len(keys) else keys[0]
+
+    return {
+        'title': chart.get('title', 'Unknown'),
+        'key': key_entry.get('key', 'C'),
+        'sections': key_entry.get('sections', []),
+        'lyrics': chart.get('lyrics'),
+    }
+
+
+async def render_chart_pdf_via_api(
+    db: Database,
+    guild_id: int,
+    chart_data: Dict[str, Any]
+) -> bytes:
+    """Render a chart to PDF via the Premium API.
+
+    Args:
+        db: Database instance to get premium token.
+        guild_id: Discord guild ID.
+        chart_data: Chart data in Premium API ChartData format.
+
+    Returns:
+        PDF bytes.
+
+    Raises:
+        InvalidTokenError: If premium token is invalid.
+        APIConnectionError: If API is unreachable.
+        PremiumAPIError: If rendering fails.
+    """
+    premium_config = db.get_premium_config(guild_id)
+    token = premium_config.get('premium_api_token')
+
+    if not token:
+        raise InvalidTokenError("No premium token configured for this guild")
+
+    async with PremiumClient() as client:
+        return await client.render_pdf(token, chart_data)
+
+
+async def transpose_chart_via_api(
+    db: Database,
+    guild_id: int,
+    chart_data: Dict[str, Any],
+    target_key: str
+) -> Dict[str, Any]:
+    """Transpose a chart to a new key via the Premium API.
+
+    Args:
+        db: Database instance to get premium token.
+        guild_id: Discord guild ID.
+        chart_data: Chart data in Premium API ChartData format.
+        target_key: Target key to transpose to.
+
+    Returns:
+        Transposed chart data dict.
+
+    Raises:
+        InvalidTokenError: If premium token is invalid.
+        APIConnectionError: If API is unreachable.
+        PremiumAPIError: If transposition fails.
+    """
+    premium_config = db.get_premium_config(guild_id)
+    token = premium_config.get('premium_api_token')
+
+    if not token:
+        raise InvalidTokenError("No premium token configured for this guild")
+
+    async with PremiumClient() as client:
+        result = await client.transpose_chart(token, chart_data, target_key)
+
+    if not result.success:
+        raise PremiumAPIError(f"Transposition failed: {result.error}")
+
+    return result.chart
 
 
 class CreateChartView(ui.View):
@@ -104,7 +281,8 @@ class ChartCreateModal(ui.Modal, title="Create Chord Chart"):
         await interaction.response.defer(thinking=True)
 
         try:
-            chart_data = parse_chord_input(
+            # Parse modal input into Premium API format
+            chart_data = parse_chord_input_local(
                 title=self.song_title.value,
                 key=self.key.value.strip(),
                 section_labels=self.section_labels.value,
@@ -112,27 +290,46 @@ class ChartCreateModal(ui.Modal, title="Create Chord Chart"):
                 lyrics_text=self.lyrics.value if self.lyrics.value else None,
             )
 
+            # Convert to database format (keys array)
+            db_keys = [{
+                'key': chart_data['key'],
+                'sections': chart_data['sections'],
+            }]
+
             # Store in database
             self.db.create_chord_chart(
                 guild_id=interaction.guild_id,
                 title=chart_data['title'],
-                chart_title=chart_data.get('chart_title'),
+                chart_title=chart_data['title'][:20] if len(chart_data['title']) > 20 else chart_data['title'],
                 lyrics=chart_data.get('lyrics'),
-                keys=chart_data['keys'],
+                keys=db_keys,
                 created_by=interaction.user.id,
             )
 
-            # Generate PDF with draft status
-            chart_data['status'] = 'draft'
-            pdf_buf = generate_chart_pdf(chart_data)
-            filename = f"{chart_data['title'].replace(' ', '_')}.pdf"
-            file = discord.File(fp=pdf_buf, filename=filename)
+            # Render PDF via Premium API
+            try:
+                pdf_bytes = await render_chart_pdf_via_api(
+                    self.db,
+                    interaction.guild_id,
+                    chart_data
+                )
+                pdf_buf = io.BytesIO(pdf_bytes)
+                filename = f"{chart_data['title'].replace(' ', '_')}.pdf"
+                file = discord.File(fp=pdf_buf, filename=filename)
 
-            await interaction.followup.send(
-                f"Chord chart for **{chart_data['title']}** (Key of {self.key.value.strip()}) created as **DRAFT**.\n"
-                f"Use `/jambot-chart approve` to mark it as approved.",
-                file=file,
-            )
+                await interaction.followup.send(
+                    f"Chord chart for **{chart_data['title']}** (Key of {self.key.value.strip()}) created as **DRAFT**.\n"
+                    f"Use `/jambot-chart approve` to mark it as approved.",
+                    file=file,
+                )
+            except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
+                # Chart saved to database but PDF rendering failed
+                logger.warning(f"PDF rendering failed, chart saved without PDF: {e}")
+                await interaction.followup.send(
+                    f"Chord chart for **{chart_data['title']}** (Key of {self.key.value.strip()}) saved as **DRAFT**.\n"
+                    f"_(PDF preview unavailable - use `/jambot-chart view {chart_data['title']}` later)_\n"
+                    f"Use `/jambot-chart approve` to mark it as approved.",
+                )
 
         except Exception as e:
             logger.error(f"Error creating chord chart: {e}", exc_info=True)
@@ -397,33 +594,61 @@ class ChartCommands:
                 )
                 return
 
-        chart_data = {
-            'title': chart['title'],
-            'chart_title': chart.get('chart_title') or chart['title'],
-            'keys': chart['keys'],
-            'lyrics': chart.get('lyrics'),
-            'status': chart.get('status', 'draft'),
-        }
+        # Convert database format to Premium API format
+        api_chart_data = convert_db_chart_to_api_format(chart)
+        display_key = api_chart_data['key']
+        status = chart.get('status', 'draft')
 
         # Transpose if a different key was requested
-        if key and chart_data['keys']:
-            source_key = chart_data['keys'][0]['key']
-            if key.upper() != source_key.upper():
-                transposed = transpose_key_entry(chart_data['keys'][0], key)
-                chart_data['keys'] = [transposed]
+        if key and key.upper() != display_key.upper():
+            try:
+                api_chart_data = await transpose_chart_via_api(
+                    self.db,
+                    interaction.guild_id,
+                    api_chart_data,
+                    key
+                )
+                display_key = key
+            except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
+                logger.warning(f"Transposition via API failed: {e}")
+                await interaction.followup.send(
+                    f"Unable to transpose chart to Key of {key}. Please try again later.",
+                    ephemeral=True
+                )
+                return
 
-        pdf_buf = generate_chart_pdf(chart_data)
-        display_key = key or chart_data['keys'][0]['key'] if chart_data['keys'] else '?'
-        filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
-        file = discord.File(fp=pdf_buf, filename=filename)
+        # Render PDF via Premium API
+        try:
+            pdf_bytes = await render_chart_pdf_via_api(
+                self.db,
+                interaction.guild_id,
+                api_chart_data
+            )
+            pdf_buf = io.BytesIO(pdf_bytes)
+            filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
+            file = discord.File(fp=pdf_buf, filename=filename)
 
-        # Build message with rate limit info if available
-        status_msg = " **(DRAFT)**" if chart_data['status'] == 'draft' else ""
-        message = f"**{chart['title']}** — Key of {display_key}{status_msg}"
-        if self.rate_limiter and rate_limit_remaining >= 0:
-            message += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
+            # Build message with rate limit info if available
+            status_msg = " **(DRAFT)**" if status == 'draft' else ""
+            message = f"**{chart['title']}** — Key of {display_key}{status_msg}"
+            if self.rate_limiter and rate_limit_remaining >= 0:
+                message += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
 
-        await interaction.followup.send(message, file=file)
+            await interaction.followup.send(message, file=file)
+
+        except InvalidTokenError:
+            await interaction.followup.send(
+                "**Premium Required**\n\n"
+                "Viewing chord chart PDFs requires premium access.\n"
+                "Use `/jambot-premium-setup` to configure your premium token.",
+                ephemeral=True
+            )
+        except (APIConnectionError, PremiumAPIError) as e:
+            logger.error(f"PDF rendering failed: {e}")
+            await interaction.followup.send(
+                "Unable to generate PDF. Please try again later.",
+                ephemeral=True
+            )
 
     async def _handle_list(self, interaction: discord.Interaction):
         """List all chord charts for this guild."""
@@ -505,29 +730,66 @@ class ChartCommands:
             )
             return
 
-        transposed = transpose_key_entry(chart['keys'][0], new_key)
-        new_keys = chart['keys'] + [transposed]
+        # Convert to API format and transpose via Premium API
+        api_chart_data = convert_db_chart_to_api_format(chart)
+
+        try:
+            transposed_chart = await transpose_chart_via_api(
+                self.db,
+                interaction.guild_id,
+                api_chart_data,
+                new_key
+            )
+        except InvalidTokenError:
+            await interaction.followup.send(
+                "**Premium Required**\n\n"
+                "Transposing charts requires premium access.\n"
+                "Use `/jambot-premium-setup` to configure your premium token.",
+                ephemeral=True
+            )
+            return
+        except (APIConnectionError, PremiumAPIError) as e:
+            logger.error(f"Transposition failed: {e}")
+            await interaction.followup.send(
+                f"Unable to transpose chart to Key of {new_key}. Please try again later.",
+                ephemeral=True
+            )
+            return
+
+        # Build transposed key entry in database format
+        transposed_key_entry = {
+            'key': transposed_chart['key'],
+            'sections': transposed_chart['sections'],
+        }
+        new_keys = chart['keys'] + [transposed_key_entry]
 
         self.db.update_chord_chart_keys(interaction.guild_id, chart['title'], new_keys)
 
-        # Generate PDF with new key
-        chart_data = {
-            'title': chart['title'],
-            'chart_title': chart.get('chart_title') or chart['title'],
-            'keys': [transposed],
-            'lyrics': chart.get('lyrics'),
-            'status': chart.get('status', 'draft'),
-        }
-        pdf_buf = generate_chart_pdf(chart_data)
-        filename = f"{chart['title'].replace(' ', '_')}_{new_key}.pdf"
-        file = discord.File(fp=pdf_buf, filename=filename)
+        # Render PDF with new key via Premium API
+        try:
+            pdf_bytes = await render_chart_pdf_via_api(
+                self.db,
+                interaction.guild_id,
+                transposed_chart
+            )
+            pdf_buf = io.BytesIO(pdf_bytes)
+            filename = f"{chart['title'].replace(' ', '_')}_{new_key}.pdf"
+            file = discord.File(fp=pdf_buf, filename=filename)
 
-        # Build message with rate limit info if available
-        message = f"Added Key of {new_key} to **{chart['title']}**."
-        if self.rate_limiter and rate_limit_remaining >= 0:
-            message += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
+            # Build message with rate limit info if available
+            message = f"Added Key of {new_key} to **{chart['title']}**."
+            if self.rate_limiter and rate_limit_remaining >= 0:
+                message += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
 
-        await interaction.followup.send(message, file=file)
+            await interaction.followup.send(message, file=file)
+
+        except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
+            # Transposition saved but PDF rendering failed
+            logger.warning(f"PDF rendering failed after transposition: {e}")
+            message = f"Added Key of {new_key} to **{chart['title']}**.\n_(PDF preview unavailable)_"
+            if self.rate_limiter and rate_limit_remaining >= 0:
+                message += f" ({rate_limit_remaining} requests remaining)"
+            await interaction.followup.send(message)
 
     async def _handle_generate(
         self, interaction: discord.Interaction,
@@ -575,21 +837,29 @@ class ChartCommands:
         if existing_chart:
             status = existing_chart.get('status', 'approved')
             if status == 'approved':
-                # Return existing chart as PDF
-                chart_data = {
-                    'title': existing_chart['title'],
-                    'keys': existing_chart['keys'],
-                    'lyrics': existing_chart.get('lyrics'),
-                    'status': status,
-                }
-                pdf_buf = generate_chart_pdf(chart_data)
-                filename = f"{existing_chart['title'].replace(' ', '_')}.pdf"
-                file = discord.File(fp=pdf_buf, filename=filename)
+                # Return existing chart as PDF via Premium API
+                api_chart_data = convert_db_chart_to_api_format(existing_chart)
+                try:
+                    pdf_bytes = await render_chart_pdf_via_api(
+                        self.db,
+                        guild_id,
+                        api_chart_data
+                    )
+                    pdf_buf = io.BytesIO(pdf_bytes)
+                    filename = f"{existing_chart['title'].replace(' ', '_')}.pdf"
+                    file = discord.File(fp=pdf_buf, filename=filename)
 
-                await interaction.followup.send(
-                    f"Found existing chart for **{existing_chart['title']}**:",
-                    file=file
-                )
+                    await interaction.followup.send(
+                        f"Found existing chart for **{existing_chart['title']}**:",
+                        file=file
+                    )
+                except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
+                    logger.warning(f"PDF rendering failed for existing chart: {e}")
+                    await interaction.followup.send(
+                        f"Found existing chart for **{existing_chart['title']}** "
+                        f"(Key of {api_chart_data['key']}).\n"
+                        f"_(PDF preview unavailable - please try again later)_"
+                    )
                 return
             else:
                 await interaction.followup.send(
@@ -684,40 +954,42 @@ class ChartCommands:
                 model='premium_api',
             )
 
-            # Generate PDF via API (uses correct TNBGJ format)
-            # Build chart data in API format
+            # Build API chart data for PDF rendering
             api_chart_data = {
                 'title': chart_title,
                 'key': chart_key,
-                'sections': [{'label': s['label'], 'chords': s['chords']} for s in sections],
+                'sections': sections,
                 'lyrics': lyrics,
             }
 
-            try:
-                pdf_bytes = await client.render_pdf(token, api_chart_data)
-                pdf_buf = io.BytesIO(pdf_bytes)
-            except Exception as pdf_error:
-                logger.warning(f"API PDF render failed, falling back to local: {pdf_error}")
-                # Fallback to local PDF generation if API fails
-                local_chart_data = {
-                    'title': chart_title,
-                    'keys': keys,
-                    'lyrics': lyrics,
-                    'status': 'draft',
-                }
-                pdf_buf = generate_chart_pdf(local_chart_data)
-
-            filename = f"{chart_title.replace(' ', '_')}.pdf"
-            file = discord.File(fp=pdf_buf, filename=filename)
-
             credits_msg = f"({result.credits_remaining} credits remaining)"
 
-            await interaction.followup.send(
-                f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**\n"
-                f"{credits_msg}\n\n"
-                f"_Use `/jambot-chart approve {chart_title}` to finalize._",
-                file=file
-            )
+            # Render PDF via Premium API
+            try:
+                pdf_bytes = await render_chart_pdf_via_api(
+                    self.db,
+                    guild_id,
+                    api_chart_data
+                )
+                pdf_buf = io.BytesIO(pdf_bytes)
+                filename = f"{chart_title.replace(' ', '_')}.pdf"
+                file = discord.File(fp=pdf_buf, filename=filename)
+
+                await interaction.followup.send(
+                    f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**\n"
+                    f"{credits_msg}\n\n"
+                    f"_Use `/jambot-chart approve {chart_title}` to finalize._",
+                    file=file
+                )
+            except (APIConnectionError, PremiumAPIError) as e:
+                # Chart was generated and saved but PDF rendering failed
+                logger.warning(f"PDF rendering failed after generation: {e}")
+                await interaction.followup.send(
+                    f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**\n"
+                    f"{credits_msg}\n"
+                    f"_(PDF preview unavailable - use `/jambot-chart view {chart_title}` later)_\n\n"
+                    f"_Use `/jambot-chart approve {chart_title}` to finalize._"
+                )
 
         except InvalidTokenError:
             logger.error(f"Invalid premium token for guild {guild_id}")
@@ -833,6 +1105,9 @@ class ChartCommands:
                     requested_key = m.group(2).strip()
                 break
 
+        # Get guild_id early for premium checks
+        guild_id = message.guild.id if message.guild else 0
+
         if is_create_request:
             logger.info(f"Chart create request via mention: title='{song_title}'")
 
@@ -891,9 +1166,7 @@ class ChartCommands:
                 )
                 return
 
-        guild_id = message.guild.id if message.guild else 0
-
-        # Look up chart
+        # Look up chart (guild_id already set above)
         chart = self.db.get_chord_chart(guild_id, song_title)
         if not chart:
             charts = self.db.search_chord_charts(guild_id, song_title)
@@ -901,32 +1174,58 @@ class ChartCommands:
                 chart = charts[0]
 
         if chart:
-            chart_data = {
-                'title': chart['title'],
-                'chart_title': chart.get('chart_title') or chart['title'],
-                'keys': chart['keys'],
-                'lyrics': chart.get('lyrics'),
-            }
+            # Convert to Premium API format
+            api_chart_data = convert_db_chart_to_api_format(chart)
+            display_key = api_chart_data['key']
 
             # Transpose if needed
-            display_key = chart_data['keys'][0]['key'] if chart_data['keys'] else '?'
-            if requested_key and chart_data['keys']:
-                source_key = chart_data['keys'][0]['key']
-                if requested_key.upper() != source_key.upper():
-                    transposed = transpose_key_entry(chart_data['keys'][0], requested_key)
-                    chart_data['keys'] = [transposed]
+            if requested_key and requested_key.upper() != display_key.upper():
+                try:
+                    api_chart_data = await transpose_chart_via_api(
+                        self.db,
+                        guild_id,
+                        api_chart_data,
+                        requested_key
+                    )
                     display_key = requested_key
+                except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
+                    logger.warning(f"Transposition via API failed in mention handler: {e}")
+                    await message.reply(
+                        f"Unable to transpose chart to Key of {requested_key}. "
+                        f"Showing original key ({display_key}) instead."
+                    )
+                    # Continue with original key
 
-            pdf_buf = generate_chart_pdf(chart_data)
-            filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
-            file = discord.File(fp=pdf_buf, filename=filename)
+            # Render PDF via Premium API
+            try:
+                pdf_bytes = await render_chart_pdf_via_api(
+                    self.db,
+                    guild_id,
+                    api_chart_data
+                )
+                pdf_buf = io.BytesIO(pdf_bytes)
+                filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
+                file = discord.File(fp=pdf_buf, filename=filename)
 
-            # Build message with rate limit info if available
-            reply_msg = f"**{chart['title']}** — Key of {display_key}"
-            if self.rate_limiter and rate_limit_remaining >= 0:
-                reply_msg += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
+                # Build message with rate limit info if available
+                reply_msg = f"**{chart['title']}** — Key of {display_key}"
+                if self.rate_limiter and rate_limit_remaining >= 0:
+                    reply_msg += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
 
-            await message.reply(reply_msg, file=file)
+                await message.reply(reply_msg, file=file)
+
+            except InvalidTokenError:
+                await message.reply(
+                    f"Found chart for **{chart['title']}** (Key of {display_key}).\n"
+                    f"PDF generation requires premium access. "
+                    f"Use `/jambot-premium-setup` to configure your token."
+                )
+            except (APIConnectionError, PremiumAPIError) as e:
+                logger.error(f"PDF rendering failed in mention handler: {e}")
+                await message.reply(
+                    f"Found chart for **{chart['title']}** (Key of {display_key}).\n"
+                    f"_(PDF preview unavailable - please try again later)_"
+                )
         else:
             # Check premium status before offering to create
             if self.db.is_premium_enabled(guild_id):

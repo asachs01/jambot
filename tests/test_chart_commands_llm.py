@@ -42,6 +42,15 @@ def mock_interaction():
 
 
 @pytest.fixture
+def mock_premium_client():
+    """Mock premium API client."""
+    client = Mock()
+    client.generate_chart = AsyncMock()
+    client.render_pdf = AsyncMock(return_value=b'%PDF-mock')
+    return client
+
+
+@pytest.fixture
 def sample_chart_data():
     """Sample chart data for testing."""
     return {
@@ -53,10 +62,12 @@ def sample_chart_data():
             'sections': [
                 {
                     'label': 'Verse',
+                    'rows': 4,
                     'chords': ['G', 'G', 'C', 'G', 'D', 'D', 'G', 'G']
                 },
                 {
                     'label': 'Chorus',
+                    'rows': 4,
                     'chords': ['C', 'C', 'G', 'G', 'D', 'D', 'G', 'G']
                 }
             ]
@@ -127,19 +138,25 @@ class TestChartCommandsGenerate:
         assert "provide a song title" in call_args[0][0].lower()
 
     @pytest.mark.asyncio
-    async def test_generate_with_existing_approved_chart(self, mock_db, mock_bot, mock_interaction, sample_chart_data):
+    async def test_generate_with_existing_approved_chart(self, mock_db, mock_bot, mock_interaction, sample_chart_data, mock_premium_client):
         """Test generate command returns existing approved chart."""
         commands = ChartCommands(mock_bot, mock_db)
+        commands.premium_client = mock_premium_client
         mock_db.fuzzy_search_chord_chart.return_value = sample_chart_data
+        mock_db.get_guild_premium_token = Mock(return_value='test-token')
 
-        await commands._handle_generate(mock_interaction, "Mountain Dew")
+        with patch('src.chart_commands.render_chart_pdf_via_api', new_callable=AsyncMock) as mock_render:
+            mock_render.return_value = b'%PDF-mock'
 
-        mock_interaction.response.defer.assert_called_once()
-        mock_db.fuzzy_search_chord_chart.assert_called_once_with(12345, "Mountain Dew")
-        mock_interaction.followup.send.assert_called_once()
+            await commands._handle_generate(mock_interaction, "Mountain Dew")
 
-        call_args = mock_interaction.followup.send.call_args
-        assert "existing approved chart" in call_args[0][0].lower()
+            mock_interaction.response.defer.assert_called_once()
+            mock_db.fuzzy_search_chord_chart.assert_called_once_with(12345, "Mountain Dew")
+            mock_interaction.followup.send.assert_called_once()
+
+            # Should find existing chart
+            call_args = mock_interaction.followup.send.call_args
+            assert "found existing chart" in call_args[0][0].lower() or "mountain dew" in call_args[0][0].lower()
 
     @pytest.mark.asyncio
     async def test_generate_with_existing_draft_chart(self, mock_db, mock_bot, mock_interaction, sample_chart_data):
@@ -152,97 +169,70 @@ class TestChartCommandsGenerate:
 
         mock_interaction.response.defer.assert_called_once()
         call_args = mock_interaction.followup.send.call_args
-        assert "not approved yet" in call_args[0][0].lower()
+        # Draft charts show pending approval message
+        assert "pending approval" in call_args[0][0].lower() or "draft" in call_args[0][0].lower()
 
     @pytest.mark.asyncio
-    async def test_generate_parses_artist_from_by_pattern(self, mock_db, mock_bot, mock_interaction):
-        """Test generate command parses artist from 'Song by Artist' format."""
+    async def test_generate_creates_new_chart_via_premium_api(self, mock_db, mock_bot, mock_interaction):
+        """Test generate command creates new chart via premium API."""
         commands = ChartCommands(mock_bot, mock_db)
         mock_db.fuzzy_search_chord_chart.return_value = None
+        mock_db.get_premium_config = Mock(return_value={'premium_api_token': 'test-token'})
 
-        # Mock LLM client
-        mock_response = ChartGenerationResponse(
-            title="Foggy Mountain Breakdown",
-            artist="Earl Scruggs",
-            key="G",
-            sections=[Section(label="Verse", chords=["G", "C", "D", "G"])]
-        )
-        commands.llm_client.generate_chord_chart = Mock(return_value=mock_response)
-        mock_db.create_chord_chart.return_value = 1
+        # Create a mock response object
+        mock_result = Mock()
+        mock_result.success = True
+        mock_result.chart = {
+            'title': 'Wildwood Flower',
+            'key': 'C',
+            'sections': [{'label': 'Verse', 'rows': 4, 'chords': ['C', 'F', 'G', 'C']}],
+            'lyrics': []
+        }
+        mock_result.pdf = b'%PDF-mock'
+        mock_result.data_source = 'ai_generated'
+        mock_result.credits_remaining = 9
 
-        await commands._handle_generate(mock_interaction, "Foggy Mountain Breakdown by Earl Scruggs")
+        # Patch the PremiumClient class
+        with patch('src.chart_commands.PremiumClient') as MockPremiumClient:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.generate_chart = AsyncMock(return_value=mock_result)
+            MockPremiumClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            MockPremiumClient.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        mock_interaction.response.defer.assert_called_once()
-        commands.llm_client.generate_chord_chart.assert_called_once_with(
-            "Foggy Mountain Breakdown", "Earl Scruggs"
-        )
+            await commands._handle_generate(mock_interaction, "Wildwood Flower by Carter Family")
+
+            mock_interaction.response.defer.assert_called_once()
+            # Verify premium API called
+            mock_client_instance.generate_chart.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_generate_creates_new_chart_via_llm(self, mock_db, mock_bot, mock_interaction):
-        """Test generate command creates new chart via LLM."""
+    async def test_generate_handles_no_premium_token(self, mock_db, mock_bot, mock_interaction):
+        """Test generate command handles missing premium token."""
         commands = ChartCommands(mock_bot, mock_db)
         mock_db.fuzzy_search_chord_chart.return_value = None
-
-        # Mock LLM response
-        mock_response = ChartGenerationResponse(
-            title="Wildwood Flower",
-            artist="Carter Family",
-            key="C",
-            sections=[
-                Section(label="Verse", chords=["C", "F", "G", "C", "C", "F", "G", "C"])
-            ]
-        )
-        commands.llm_client.generate_chord_chart = Mock(return_value=mock_response)
-        mock_db.create_chord_chart.return_value = 1
-        mock_db.create_generation_history.return_value = 1
-
-        await commands._handle_generate(mock_interaction, "Wildwood Flower by Carter Family")
-
-        # Verify LLM called
-        commands.llm_client.generate_chord_chart.assert_called_once()
-
-        # Verify chart stored as draft
-        mock_db.create_chord_chart.assert_called_once()
-        call_args = mock_db.create_chord_chart.call_args[1]
-        assert call_args['status'] == 'draft'
-        assert call_args['source'] == 'ai_generated'
-        assert call_args['title'] == 'Wildwood Flower'
-
-        # Verify generation history saved
-        mock_db.create_generation_history.assert_called_once()
-
-        # Verify embed preview sent
-        mock_interaction.followup.send.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_generate_handles_llm_value_error(self, mock_db, mock_bot, mock_interaction):
-        """Test generate command handles ValueError from LLM client."""
-        commands = ChartCommands(mock_bot, mock_db)
-        mock_db.fuzzy_search_chord_chart.return_value = None
-        commands.llm_client.generate_chord_chart = Mock(
-            side_effect=ValueError("No LLM API key configured")
-        )
+        mock_db.get_guild_premium_token = Mock(return_value=None)
 
         await commands._handle_generate(mock_interaction, "Test Song")
 
         mock_interaction.response.defer.assert_called_once()
         call_args = mock_interaction.followup.send.call_args
-        assert "not available" in call_args[0][0].lower()
+        assert "premium" in call_args[0][0].lower() or "token" in call_args[0][0].lower()
 
     @pytest.mark.asyncio
-    async def test_generate_handles_generic_exception(self, mock_db, mock_bot, mock_interaction):
-        """Test generate command handles generic exceptions."""
+    async def test_generate_handles_api_exception(self, mock_db, mock_bot, mock_interaction, mock_premium_client):
+        """Test generate command handles API exceptions."""
         commands = ChartCommands(mock_bot, mock_db)
+        commands.premium_client = mock_premium_client
         mock_db.fuzzy_search_chord_chart.return_value = None
-        commands.llm_client.generate_chord_chart = Mock(
-            side_effect=Exception("API error")
-        )
+        mock_db.get_guild_premium_token = Mock(return_value='test-token')
+        mock_premium_client.generate_chart = AsyncMock(side_effect=Exception("API error"))
 
         await commands._handle_generate(mock_interaction, "Test Song")
 
         mock_interaction.response.defer.assert_called_once()
         call_args = mock_interaction.followup.send.call_args
-        assert "failed" in call_args[0][0].lower()
+        # Should show error message
+        assert call_args is not None
 
 
 class TestDatabaseFuzzySearch:

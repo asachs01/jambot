@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING**: Chord chart PDF generation, transposition, and rendering now use Premium API instead of local code
+- Manual chart creation via modal now uses Premium API for PDF rendering
+- Chart view command now uses Premium API for PDF rendering and transposition
+- Transpose command now uses Premium API for both transposition and PDF rendering
+- Mention handler now uses Premium API for chart lookup, transposition, and PDF rendering
+- Added graceful degradation when Premium API is unavailable (charts saved but PDF preview may be unavailable)
+
 ### Added
+- New `render_pdf()` method in PremiumClient for rendering chart data to PDF
+- New `transpose_chart()` method in PremiumClient for transposing charts
+- New `create_manual_chart()` method in PremiumClient for manual chart creation
+- New `TransposedChart` dataclass for transposition results
+- Local helper functions for parsing modal input and converting database format to API format
 - Chord chart generation feature with `/jambot-chart` slash command (create, view, list, transpose).
 - PDF chord charts in TNBGJ songbook format (landscape letter, lyrics left, chord grid right).
 - Chromatic transposition utility with bluegrass-appropriate sharp/flat spellings.
