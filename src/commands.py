@@ -600,9 +600,9 @@ class CreditPackSelectView(View):
     """View with buttons for selecting credit pack sizes to purchase."""
 
     CREDIT_PACKS = [
-        {"id": "credit_pack_10", "credits": 10, "price": "$4.99", "label": "10 Credits"},
-        {"id": "credit_pack_25", "credits": 25, "price": "$9.99", "label": "25 Credits", "savings": "17%"},
-        {"id": "credit_pack_50", "credits": 50, "price": "$17.99", "label": "50 Credits", "savings": "28%"},
+        {"id": "credit_pack_10", "credits": 10, "price": "$1.99", "label": "10 Credits"},
+        {"id": "credit_pack_30", "credits": 30, "price": "$3.99", "label": "30 Credits", "savings": "33%"},
+        {"id": "credit_pack_75", "credits": 75, "price": "$6.99", "label": "75 Credits", "savings": "53%"},
     ]
 
     def __init__(self, db: Database, guild_id: int, token: str):

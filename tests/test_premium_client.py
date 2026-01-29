@@ -410,7 +410,7 @@ class TestPremiumClientCheckoutUrl:
 
             url = await client.get_checkout_url(
                 'test_token',
-                'credit_pack_25',
+                'credit_pack_30',
                 123456789,
                 success_url='https://example.com/success',
                 cancel_url='https://example.com/cancel'
@@ -420,7 +420,7 @@ class TestPremiumClientCheckoutUrl:
             call_args = mock_request.call_args
             request_data = call_args[1]['data']
 
-            assert request_data['product_id'] == 'credit_pack_25'
+            assert request_data['product_id'] == 'credit_pack_30'
             assert request_data['guild_id'] == 123456789
             assert request_data['success_url'] == 'https://example.com/success'
             assert request_data['cancel_url'] == 'https://example.com/cancel'
