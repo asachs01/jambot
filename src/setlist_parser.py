@@ -9,7 +9,8 @@ class SetlistParser:
 
     # Default regex patterns for setlist detection
     # Note: Handles both straight apostrophe (') and curly quote (') from Discord
-    DEFAULT_INTRO_PATTERN = r"here['\u2019]s\s+the\s+(?:upcoming\s+)?setlist\s+for\s+the\s+(.+?)\s+jam\s+on\s+(.+?)\."
+    # The (?:\s*\([^)]*\))? allows optional parenthetical comments between "setlist" and "for"
+    DEFAULT_INTRO_PATTERN = r"here['\u2019]s\s+the\s+(?:upcoming\s+)?setlist(?:\s*\([^)]*\))?\s+for\s+the\s+(.+?)\s+jam\s+on\s+(.+?)\."
 
     # Default song line pattern - matches numbered songs with optional key in parentheses
     # Examples: "1. Will the Circle (G)" or "1. Joy to the World"

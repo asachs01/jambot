@@ -39,6 +39,24 @@ class TestSetlistParserDetection:
         message = "Here's the upcoming setlist for the evening jam on Friday.\n1. Song One"
         assert parser.is_setlist_message(message) is True
 
+    def test_detects_setlist_with_parenthetical_comment(self):
+        """Should detect setlist with parenthetical comment between 'setlist' and 'for'."""
+        parser = SetlistParser()
+        message = (
+            "Here's the upcoming setlist (as requested and dictated by Kristy) "
+            "for the 6:30 jam on 02/03/26. If you want to sing any of these, "
+            "please let me know.\n\n"
+            "1. John Daly (A)\n"
+            "2. A hundred years from now (G)"
+        )
+        assert parser.is_setlist_message(message) is True
+
+        # Also verify parsing extracts correct time and date
+        result = parser.parse_setlist(message)
+        assert result is not None
+        assert result['time'] == '6:30'
+        assert result['date'] == '02/03/26'
+
 
 class TestSetlistParserParsing:
     """Test setlist message parsing."""

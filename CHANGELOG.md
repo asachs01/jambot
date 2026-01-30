@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions workflow for automatic documentation deployment
 
 ### Fixed
+- Fix setlist detection failing when jam leader adds parenthetical comments between "setlist" and "for" (e.g., "Here's the setlist (as requested by Kristy) for the 6:30 jam...")
 - Fix crash when creating playlist with missing selections when DISCORD_ADMIN_ID env var is not set. Now uses database approvers instead.
 - Improve error message for missing song selections to explain how to retry after selecting songs.
 - Switch to raw reaction events for more reliable DM reaction handling.
