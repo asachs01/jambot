@@ -95,22 +95,23 @@ class InteractionContext:
         ephemeral: bool = False
     ) -> None:
         """Send response via interaction followup (assumes defer was called)."""
+        # Build kwargs, omitting None values to avoid discord.py type errors
+        kwargs = {}
+        if content is not None:
+            kwargs["content"] = content
+        if embed is not None:
+            kwargs["embed"] = embed
+        if file is not None:
+            kwargs["file"] = file
+        if view is not None:
+            kwargs["view"] = view
+        if ephemeral:
+            kwargs["ephemeral"] = ephemeral
+
         if self._deferred:
-            await self._interaction.followup.send(
-                content=content,
-                embed=embed,
-                file=file,
-                view=view,
-                ephemeral=ephemeral
-            )
+            await self._interaction.followup.send(**kwargs)
         else:
-            await self._interaction.response.send_message(
-                content=content,
-                embed=embed,
-                file=file,
-                view=view,
-                ephemeral=ephemeral
-            )
+            await self._interaction.response.send_message(**kwargs)
 
     async def defer(self, *, thinking: bool = False) -> None:
         """Defer interaction response."""
@@ -149,12 +150,17 @@ class MessageContext:
     ) -> None:
         """Send response by replying to the message."""
         # Note: ephemeral is ignored for message replies (Discord limitation)
-        await self._message.reply(
-            content=content,
-            embed=embed,
-            file=file,
-            view=view
-        )
+        # Build kwargs, omitting None values to avoid discord.py type errors
+        kwargs = {}
+        if content is not None:
+            kwargs["content"] = content
+        if embed is not None:
+            kwargs["embed"] = embed
+        if file is not None:
+            kwargs["file"] = file
+        if view is not None:
+            kwargs["view"] = view
+        await self._message.reply(**kwargs)
 
     async def defer(self, *, thinking: bool = False) -> None:
         """Show typing indicator for messages."""
