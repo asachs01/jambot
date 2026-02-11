@@ -172,6 +172,24 @@ class MessageContext:
 # before sending to the Premium API. The Premium API handles all heavy lifting.
 # ============================================================================
 
+def get_source_badge(source: str) -> str:
+    """Return a display badge string for the chart data source.
+
+    Args:
+        source: Data source identifier (e.g., 'ai_generated', 'ultimate_guitar', 'user_created').
+
+    Returns:
+        Formatted badge string with emoji, or empty string for unknown sources.
+    """
+    badges = {
+        'ai_generated': "\n⚠️ AI-Generated — chords may not be accurate",
+        'ai_generated_fallback': "\n⚠️ AI-Generated (fallback) — chords may not be accurate",
+        'ultimate_guitar': "\n🎸 Source: Ultimate Guitar",
+        'web_search': "\n🔍 Source: Web Search",
+        'user_created': "\n📝 User Created",
+    }
+    return badges.get(source, "")
+
 def parse_chord_input_local(
     title: str,
     key: str,
@@ -785,14 +803,7 @@ class ChartCommands:
 
             # Build message with status and source badges
             message = f"**{chart['title']}** — Key of {display_key}"
-
-            # Add source badge
-            if source == 'ai_generated':
-                message += "\n⚠️ AI-Generated — chords may not be accurate"
-            elif source == 'ultimate_guitar':
-                message += "\n🎸 Source: Ultimate Guitar"
-            elif source == 'user_created':
-                message += "\n📝 User Created"
+            message += get_source_badge(source)
 
             # Add draft warning if applicable
             if status == 'draft':
@@ -968,13 +979,7 @@ class ChartCommands:
             # Build message with source badge and rate limit info
             message = f"Added Key of {new_key} to **{chart['title']}**."
 
-            # Add source badge
-            if source == 'ai_generated':
-                message += "\n⚠️ AI-Generated — chords may not be accurate"
-            elif source == 'ultimate_guitar':
-                message += "\n🎸 Source: Ultimate Guitar"
-            elif source == 'user_created':
-                message += "\n📝 User Created"
+            message += get_source_badge(source)
 
             # Add rate limit info
             if self.rate_limiter and rate_limit_remaining >= 0:
@@ -1058,12 +1063,7 @@ class ChartCommands:
 
                     # Build message with source badge
                     message = f"Found existing chart for **{existing_chart['title']}**:"
-                    if source == 'ai_generated':
-                        message += "\n⚠️ AI-Generated — chords may not be accurate"
-                    elif source == 'ultimate_guitar':
-                        message += "\n🎸 Source: Ultimate Guitar"
-                    elif source == 'user_created':
-                        message += "\n📝 User Created"
+                    message += get_source_badge(source)
 
                     await ctx.respond(message, file=file)
                 except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
@@ -1189,8 +1189,8 @@ class ChartCommands:
                 file = discord.File(fp=pdf_buf, filename=filename)
 
                 await ctx.respond(
-                    f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**\n"
-                    f"⚠️ AI-Generated — chords may not be accurate\n"
+                    f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**"
+                    f"{get_source_badge('ai_generated')}\n"
                     f"{credits_msg}\n\n"
                     f"_Use `/jambot-chart approve {chart_title}` to finalize._",
                     file=file
@@ -1199,8 +1199,8 @@ class ChartCommands:
                 # Chart was generated and saved but PDF rendering failed
                 logger.warning(f"PDF rendering failed after generation: {e}")
                 await ctx.respond(
-                    f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**\n"
-                    f"⚠️ AI-Generated — chords may not be accurate\n"
+                    f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**"
+                    f"{get_source_badge('ai_generated')}\n"
                     f"{credits_msg}\n"
                     f"_(PDF preview unavailable - use `/jambot-chart view {chart_title}` later)_\n\n"
                     f"_Use `/jambot-chart approve {chart_title}` to finalize._"
