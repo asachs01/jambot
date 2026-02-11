@@ -70,6 +70,10 @@ class Config:
     CHORD_CHART_FALLBACK_MODEL = os.getenv('CHORD_CHART_FALLBACK_MODEL', 'meta-llama/llama-3.1-70b-instruct')
     CHORD_CHART_PREMIUM_MODEL = os.getenv('CHORD_CHART_PREMIUM_MODEL', 'anthropic/claude-3.5-haiku')
 
+    # Intent Parser Configuration
+    # Model for natural language @mention intent parsing (should be fast and cheap)
+    INTENT_MODEL = os.getenv('JAMBOT_INTENT_MODEL', 'anthropic/claude-haiku-3')
+
     # Custom system prompt for chart generation (optional - uses default if not set)
     CHORD_CHART_SYSTEM_PROMPT = os.getenv('CHORD_CHART_SYSTEM_PROMPT')
 
