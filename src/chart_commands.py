@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any, List
 from src.logger import logger
 from src.database import Database
 from src.llm_client import LLMClient
+from src.intent_parser import parse_mention_intent, Intent
 from src.premium_client import (
     PremiumClient,
     InvalidTokenError,
@@ -1072,18 +1073,321 @@ class ChartCommands:
     async def handle_mention(self, message: discord.Message):
         """Handle @mentions requesting chord charts.
 
-        Patterns recognized:
-        - "chord chart for <title> in <key>"
-        - "chords for <title>"
-        - "chart for <title>"
-        - "I need a chord chart for <title> in <key>"
-        - "create a chord chart for <title>"
-        - "add a chord chart for <title>"
+        Uses LLM-powered intent parsing for natural language understanding,
+        with regex fallback for reliability.
+
+        Patterns recognized (via LLM or regex):
+        - VIEW: "chords for <title>", "show me <title> in <key>"
+        - CREATE: "create a chart for <title>"
+        - GENERATE: "generate chords for <title> by <artist>"
+        - TRANSPOSE: "transpose <title> to <key>"
+        - LIST: "list all charts", "what songs do you have?"
+        - SEARCH: "do you have any <artist> songs?"
+        - DELETE: "delete <title>" (admin only)
         """
         content = message.content
         # Strip user and role mentions
         content = re.sub(r'<@[!&]?\d+>', '', content).strip()
 
+        guild_id = message.guild.id if message.guild else 0
+
+        # Try LLM-powered intent parsing first
+        intent_result = await parse_mention_intent(content)
+
+        # If LLM parsing succeeded with high confidence, use it
+        if intent_result and intent_result.confidence > 0.7:
+            logger.info(f"Intent parsed via LLM: {intent_result.intent.value} "
+                       f"(confidence={intent_result.confidence:.2f})")
+
+            # Route to appropriate handler based on intent
+            if intent_result.intent == Intent.VIEW:
+                await self._handle_view_intent(message, intent_result, guild_id)
+            elif intent_result.intent == Intent.CREATE:
+                await self._handle_create_intent(message, intent_result, guild_id)
+            elif intent_result.intent == Intent.GENERATE:
+                await self._handle_generate_intent(message, intent_result, guild_id)
+            elif intent_result.intent == Intent.TRANSPOSE:
+                await self._handle_transpose_intent(message, intent_result, guild_id)
+            elif intent_result.intent == Intent.LIST:
+                await self._handle_list_intent(message, guild_id)
+            elif intent_result.intent == Intent.SEARCH:
+                await self._handle_search_intent(message, intent_result, guild_id)
+            elif intent_result.intent == Intent.DELETE:
+                await self._handle_delete_intent(message, intent_result, guild_id)
+            elif intent_result.intent == Intent.UNKNOWN:
+                await self._handle_unknown_intent(message)
+            return
+
+        # Fallback to regex patterns if LLM parsing failed or low confidence
+        logger.info("Falling back to regex pattern matching")
+        await self._handle_mention_regex_fallback(message, content, guild_id)
+
+    async def _handle_view_intent(
+        self, message: discord.Message,
+        intent: 'IntentResult',
+        guild_id: int
+    ):
+        """Handle VIEW intent - user wants to see an existing chart."""
+        if not intent.song_title:
+            await message.reply(
+                "I didn't quite catch which song you wanted. Try: `chord chart for [song name]`"
+            )
+            return
+
+        # Rate limit check
+        rate_limit_remaining = -1
+        if self.rate_limiter:
+            identifier = f"user:{message.author.id}:chord"
+            allowed, rate_limit_remaining = await self.rate_limiter.check_rate_limit(identifier)
+            if not allowed:
+                ttl = await self.rate_limiter.get_ttl(identifier)
+                minutes = ttl // 60
+                seconds = ttl % 60
+                await message.reply(
+                    f"⏱️ Rate limit exceeded. You can make 3 chord chart requests per 10 minutes. "
+                    f"Please try again in {minutes}m {seconds}s."
+                )
+                return
+
+        # Look up chart
+        chart = self.db.get_chord_chart(guild_id, intent.song_title)
+        if not chart:
+            charts = self.db.search_chord_charts(guild_id, intent.song_title)
+            if charts:
+                chart = charts[0]
+
+        if not chart:
+            # Offer to create
+            if self.db.is_premium_enabled(guild_id):
+                view = CreateChartView(self.db, prefill_title=intent.song_title)
+                await message.reply(
+                    f"I don't have a chord chart for \"{intent.song_title}\" yet. "
+                    f"Click below to create one:",
+                    view=view,
+                )
+            else:
+                await message.reply(
+                    f"I don't have a chord chart for \"{intent.song_title}\" yet.\n\n"
+                    f"Creating charts requires premium access. "
+                    f"Use `/jambot-premium-setup` to get started with 5 free trial generations!"
+                )
+            return
+
+        # Render chart
+        api_chart_data = convert_db_chart_to_api_format(chart)
+        display_key = api_chart_data['key']
+
+        # Transpose if requested
+        if intent.key and intent.key.upper() != display_key.upper():
+            try:
+                api_chart_data = await transpose_chart_via_api(
+                    self.db, guild_id, api_chart_data, intent.key
+                )
+                display_key = intent.key
+            except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
+                logger.warning(f"Transposition failed: {e}")
+
+        # Render PDF
+        try:
+            pdf_bytes = await render_chart_pdf_via_api(self.db, guild_id, api_chart_data)
+            pdf_buf = io.BytesIO(pdf_bytes)
+            filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
+            file = discord.File(fp=pdf_buf, filename=filename)
+
+            reply_msg = f"**{chart['title']}** — Key of {display_key}"
+            if self.rate_limiter and rate_limit_remaining >= 0:
+                reply_msg += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
+
+            await message.reply(reply_msg, file=file)
+        except InvalidTokenError:
+            await message.reply(
+                f"Found chart for **{chart['title']}** (Key of {display_key}).\n"
+                f"PDF generation requires premium access. Use `/jambot-premium-setup` to configure your token."
+            )
+        except (APIConnectionError, PremiumAPIError) as e:
+            logger.error(f"PDF rendering failed: {e}")
+            await message.reply(
+                f"Found chart for **{chart['title']}** (Key of {display_key}).\n"
+                f"_(PDF preview unavailable - please try again later)_"
+            )
+
+    async def _handle_create_intent(
+        self, message: discord.Message,
+        intent: 'IntentResult',
+        guild_id: int
+    ):
+        """Handle CREATE intent - user wants to manually create a chart."""
+        if not self.db.is_premium_enabled(guild_id):
+            await message.reply(
+                "**Premium Required**\n\n"
+                "Creating chord charts requires premium access.\n\n"
+                "**Get started with 5 free trial generations!**\n"
+                "Use `/jambot-premium-setup` to configure your premium token.\n\n"
+                "_Visit https://premium.jambot.app to get a token._"
+            )
+            return
+
+        view = CreateChartView(self.db, prefill_title=intent.song_title)
+        await message.reply("Click below to create a new chord chart:", view=view)
+
+    async def _handle_generate_intent(
+        self, message: discord.Message,
+        intent: 'IntentResult',
+        guild_id: int
+    ):
+        """Handle GENERATE intent - user wants AI to generate a chart."""
+        if not intent.song_title:
+            await message.reply(
+                "Please specify which song you'd like me to generate. "
+                "Try: `generate chords for [song name]`"
+            )
+            return
+
+        if not self.db.is_premium_enabled(guild_id):
+            await message.reply(
+                "**Premium Required**\n\n"
+                "AI chord chart generation requires premium access.\n\n"
+                "**Get started with 5 free trial generations!**\n"
+                "Use `/jambot-premium-setup` to configure your premium token.\n\n"
+                "_Visit https://premium.jambot.app to get a token._"
+            )
+            return
+
+        # Use the slash command handler for generation
+        await message.reply(
+            f"Generating chord chart for **{intent.song_title}**"
+            + (f" by {intent.artist}" if intent.artist else "")
+            + "... This may take a moment."
+        )
+        # Note: This would require refactoring _handle_generate to be callable from here
+        # For now, direct users to use the slash command
+        await message.reply(
+            f"Use `/jambot-chart generate {intent.song_title}`"
+            + (f" key:{intent.key}" if intent.key else "")
+            + " to generate this chart."
+        )
+
+    async def _handle_transpose_intent(
+        self, message: discord.Message,
+        intent: 'IntentResult',
+        guild_id: int
+    ):
+        """Handle TRANSPOSE intent - user wants to change chart key."""
+        if not intent.song_title or not intent.target_key:
+            await message.reply(
+                "To transpose a chart, specify the song and target key. "
+                "Try: `transpose [song name] to [key]`"
+            )
+            return
+
+        await message.reply(
+            f"Use `/jambot-chart transpose {intent.song_title} new_key:{intent.target_key}` "
+            f"to transpose this chart."
+        )
+
+    async def _handle_list_intent(self, message: discord.Message, guild_id: int):
+        """Handle LIST intent - user wants to see all charts."""
+        charts = self.db.list_chord_charts(guild_id)
+        if not charts:
+            await message.reply("No chord charts saved yet.")
+            return
+
+        lines = []
+        for chart in charts[:20]:  # Limit to 20 to avoid message length issues
+            keys_str = ", ".join(k['key'] for k in chart.get('keys', []))
+            lines.append(f"- **{chart['title']}** (Key of {keys_str})")
+
+        msg = "**Available Chord Charts:**\n" + "\n".join(lines)
+        if len(charts) > 20:
+            msg += f"\n\n_... and {len(charts) - 20} more. Use `/jambot-chart-list` to see all._"
+
+        await message.reply(msg)
+
+    async def _handle_search_intent(
+        self, message: discord.Message,
+        intent: 'IntentResult',
+        guild_id: int
+    ):
+        """Handle SEARCH intent - user wants to find charts by artist or partial title."""
+        search_term = intent.artist or intent.song_title or ""
+        if not search_term:
+            await message.reply(
+                "What would you like to search for? Try: `do you have any [artist] songs?`"
+            )
+            return
+
+        # Search by title or artist field
+        charts = self.db.search_chord_charts(guild_id, search_term)
+
+        # Also check artist field if available
+        all_charts = self.db.list_chord_charts(guild_id)
+        artist_matches = [
+            c for c in all_charts
+            if c.get('artist') and search_term.lower() in c['artist'].lower()
+        ]
+
+        # Combine and deduplicate
+        chart_ids = set()
+        combined = []
+        for chart in charts + artist_matches:
+            if chart['id'] not in chart_ids:
+                chart_ids.add(chart['id'])
+                combined.append(chart)
+
+        if not combined:
+            await message.reply(
+                f"I couldn't find any charts matching \"{search_term}\". "
+                f"Try `/jambot-chart list` to see all available charts."
+            )
+            return
+
+        lines = []
+        for chart in combined[:10]:  # Limit to 10
+            keys_str = ", ".join(k['key'] for k in chart.get('keys', []))
+            artist_str = f" by {chart['artist']}" if chart.get('artist') else ""
+            lines.append(f"- **{chart['title']}**{artist_str} (Key of {keys_str})")
+
+        msg = f"**Found {len(combined)} chart(s) matching '{search_term}':**\n" + "\n".join(lines)
+        if len(combined) > 10:
+            msg += f"\n\n_... and {len(combined) - 10} more._"
+
+        await message.reply(msg)
+
+    async def _handle_delete_intent(
+        self, message: discord.Message,
+        intent: 'IntentResult',
+        guild_id: int
+    ):
+        """Handle DELETE intent - user wants to delete a chart."""
+        if not message.author.guild_permissions.administrator:
+            await message.reply("Only administrators can delete chord charts.")
+            return
+
+        if not intent.song_title:
+            await message.reply(
+                "Please specify which chart to delete. Try: `delete [song name]`"
+            )
+            return
+
+        await message.reply(
+            f"Use `/jambot-chart delete {intent.song_title}` to delete this chart."
+        )
+
+    async def _handle_unknown_intent(self, message: discord.Message):
+        """Handle UNKNOWN intent - couldn't determine what user wants."""
+        await message.reply(
+            "I didn't quite catch that. Try:\n"
+            "- `chord chart for [song name]` to view a chart\n"
+            "- `list charts` to see all available charts\n"
+            "- `create a chart` to add a new one"
+        )
+
+    async def _handle_mention_regex_fallback(
+        self, message: discord.Message,
+        content: str,
+        guild_id: int
+    ):
+        """Fallback regex-based mention handler (original implementation)."""
         # Check for explicit create requests first
         create_patterns = [
             r'(?:create|add|make|new)\s+(?:a\s+)?(?:chord\s*chart|chords?|chart)\s+(?:for\s+)?(.+?)\s+in\s+([A-Ga-g][#b]?)\s*$',
@@ -1105,11 +1409,8 @@ class ChartCommands:
                     requested_key = m.group(2).strip()
                 break
 
-        # Get guild_id early for premium checks
-        guild_id = message.guild.id if message.guild else 0
-
         if is_create_request:
-            logger.info(f"Chart create request via mention: title='{song_title}'")
+            logger.info(f"Chart create request via mention (regex): title='{song_title}'")
 
             # Check premium status for create requests
             if not self.db.is_premium_enabled(guild_id):
@@ -1148,11 +1449,11 @@ class ChartCommands:
         if not song_title:
             return  # Not a chart request
 
-        logger.info(f"Chart mention request: title='{song_title}', key={requested_key}")
+        logger.info(f"Chart mention request (regex): title='{song_title}', key={requested_key}")
 
-        # Rate limit check (per-user) for chart lookups only (not create requests)
-        rate_limit_remaining = -1  # Store remaining count from first check
-        if not is_create_request and self.rate_limiter:
+        # Rate limit check (per-user)
+        rate_limit_remaining = -1
+        if self.rate_limiter:
             identifier = f"user:{message.author.id}:chord"
             allowed, rate_limit_remaining = await self.rate_limiter.check_rate_limit(identifier)
 
@@ -1166,7 +1467,7 @@ class ChartCommands:
                 )
                 return
 
-        # Look up chart (guild_id already set above)
+        # Look up chart
         chart = self.db.get_chord_chart(guild_id, song_title)
         if not chart:
             charts = self.db.search_chord_charts(guild_id, song_title)
