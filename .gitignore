@@ -65,3 +65,9 @@ tests/samples/
 
 # OS specific
 .DS_Store
+
+# AI tool artifacts
+.claude-flow/
+.claude/
+.serena/
+.swarm/
