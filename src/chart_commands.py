@@ -8,7 +8,7 @@ import io
 import math
 import discord
 from discord import app_commands, ui
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union, Protocol
 
 from src.logger import logger
 from src.database import Database
@@ -21,6 +21,149 @@ from src.premium_client import (
     APIConnectionError,
     PremiumAPIError,
 )
+
+
+# ============================================================================
+# CONTEXT ABSTRACTION
+# Unified interface for handlers to work with both Interactions and Messages
+# ============================================================================
+
+class ChartContext(Protocol):
+    """Protocol defining the interface for chart command contexts.
+
+    Allows handlers to work with both discord.Interaction and discord.Message
+    objects through a unified interface.
+    """
+    @property
+    def guild_id(self) -> int:
+        """Guild ID where command was invoked."""
+        ...
+
+    @property
+    def user_id(self) -> int:
+        """User ID who invoked the command."""
+        ...
+
+    @property
+    def channel(self) -> discord.abc.Messageable:
+        """Channel where command was invoked."""
+        ...
+
+    async def respond(
+        self,
+        content: str = None,
+        *,
+        embed: discord.Embed = None,
+        file: discord.File = None,
+        view: ui.View = None,
+        ephemeral: bool = False
+    ) -> None:
+        """Send a response to the user."""
+        ...
+
+    async def defer(self, *, thinking: bool = False) -> None:
+        """Defer the response (show loading state)."""
+        ...
+
+
+class InteractionContext:
+    """Wrapper for discord.Interaction to implement ChartContext."""
+
+    def __init__(self, interaction: discord.Interaction):
+        self._interaction = interaction
+        self._deferred = False
+
+    @property
+    def guild_id(self) -> int:
+        return self._interaction.guild_id
+
+    @property
+    def user_id(self) -> int:
+        return self._interaction.user.id
+
+    @property
+    def channel(self) -> discord.abc.Messageable:
+        return self._interaction.channel
+
+    async def respond(
+        self,
+        content: str = None,
+        *,
+        embed: discord.Embed = None,
+        file: discord.File = None,
+        view: ui.View = None,
+        ephemeral: bool = False
+    ) -> None:
+        """Send response via interaction followup (assumes defer was called)."""
+        if self._deferred:
+            await self._interaction.followup.send(
+                content=content,
+                embed=embed,
+                file=file,
+                view=view,
+                ephemeral=ephemeral
+            )
+        else:
+            await self._interaction.response.send_message(
+                content=content,
+                embed=embed,
+                file=file,
+                view=view,
+                ephemeral=ephemeral
+            )
+
+    async def defer(self, *, thinking: bool = False) -> None:
+        """Defer interaction response."""
+        if not self._deferred:
+            await self._interaction.response.defer(thinking=thinking)
+            self._deferred = True
+
+
+class MessageContext:
+    """Wrapper for discord.Message to implement ChartContext."""
+
+    def __init__(self, message: discord.Message):
+        self._message = message
+        self._typing_started = False
+
+    @property
+    def guild_id(self) -> int:
+        return self._message.guild.id if self._message.guild else 0
+
+    @property
+    def user_id(self) -> int:
+        return self._message.author.id
+
+    @property
+    def channel(self) -> discord.abc.Messageable:
+        return self._message.channel
+
+    async def respond(
+        self,
+        content: str = None,
+        *,
+        embed: discord.Embed = None,
+        file: discord.File = None,
+        view: ui.View = None,
+        ephemeral: bool = False
+    ) -> None:
+        """Send response by replying to the message."""
+        # Note: ephemeral is ignored for message replies (Discord limitation)
+        await self._message.reply(
+            content=content,
+            embed=embed,
+            file=file,
+            view=view
+        )
+
+    async def defer(self, *, thinking: bool = False) -> None:
+        """Show typing indicator for messages."""
+        if not self._typing_started:
+            # Start typing indicator (Discord limitation: can't show persistent typing)
+            # Just trigger a single typing event
+            async with self.channel.typing():
+                pass
+            self._typing_started = True
 
 
 # ============================================================================
@@ -554,43 +697,53 @@ class ChartCommands:
         await interaction.response.send_modal(modal)
 
     async def _handle_view(
-        self, interaction: discord.Interaction,
-        song_title: Optional[str], key: Optional[str]
+        self,
+        ctx: Union[ChartContext, discord.Interaction],
+        song_title: Optional[str],
+        key: Optional[str]
     ):
-        """View/generate a chord chart PDF."""
+        """View/generate a chord chart PDF.
+
+        Args:
+            ctx: Chart context (Interaction or Message wrapper)
+            song_title: Song title to view
+            key: Optional key to transpose to
+        """
+        # Convert raw Interaction to context wrapper if needed
+        if isinstance(ctx, discord.Interaction):
+            ctx = InteractionContext(ctx)
+
         if not song_title:
-            await interaction.response.send_message(
-                "Please provide a song title.", ephemeral=True
-            )
+            await ctx.respond("Please provide a song title.", ephemeral=True)
             return
 
         # Rate limit check (per-user)
-        rate_limit_remaining = -1  # Store remaining count from first check
+        rate_limit_remaining = -1
         if self.rate_limiter:
-            identifier = f"user:{interaction.user.id}:chord"
+            identifier = f"user:{ctx.user_id}:chord"
             allowed, rate_limit_remaining = await self.rate_limiter.check_rate_limit(identifier)
 
             if not allowed:
                 ttl = await self.rate_limiter.get_ttl(identifier)
                 minutes = ttl // 60
                 seconds = ttl % 60
-                await interaction.response.send_message(
+                await ctx.respond(
                     f"⏱️ Rate limit exceeded. You can make 3 chord chart requests per 10 minutes. "
                     f"Please try again in {minutes}m {seconds}s.",
                     ephemeral=True
                 )
                 return
 
-        await interaction.response.defer(thinking=True)
+        await ctx.defer(thinking=True)
 
-        chart = self.db.get_chord_chart(interaction.guild_id, song_title)
+        chart = self.db.get_chord_chart(ctx.guild_id, song_title)
         if not chart:
             # Try fuzzy match
-            charts = self.db.search_chord_charts(interaction.guild_id, song_title)
+            charts = self.db.search_chord_charts(ctx.guild_id, song_title)
             if charts:
                 chart = charts[0]
             else:
-                await interaction.followup.send(
+                await ctx.respond(
                     f"No chord chart found for \"{song_title}\".", ephemeral=True
                 )
                 return
@@ -599,20 +752,21 @@ class ChartCommands:
         api_chart_data = convert_db_chart_to_api_format(chart)
         display_key = api_chart_data['key']
         status = chart.get('status', 'draft')
+        source = chart.get('source', 'user_created')
 
         # Transpose if a different key was requested
         if key and key.upper() != display_key.upper():
             try:
                 api_chart_data = await transpose_chart_via_api(
                     self.db,
-                    interaction.guild_id,
+                    ctx.guild_id,
                     api_chart_data,
                     key
                 )
                 display_key = key
             except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
                 logger.warning(f"Transposition via API failed: {e}")
-                await interaction.followup.send(
+                await ctx.respond(
                     f"Unable to transpose chart to Key of {key}. Please try again later.",
                     ephemeral=True
                 )
@@ -622,23 +776,36 @@ class ChartCommands:
         try:
             pdf_bytes = await render_chart_pdf_via_api(
                 self.db,
-                interaction.guild_id,
+                ctx.guild_id,
                 api_chart_data
             )
             pdf_buf = io.BytesIO(pdf_bytes)
             filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
             file = discord.File(fp=pdf_buf, filename=filename)
 
-            # Build message with rate limit info if available
-            status_msg = " **(DRAFT)**" if status == 'draft' else ""
-            message = f"**{chart['title']}** — Key of {display_key}{status_msg}"
-            if self.rate_limiter and rate_limit_remaining >= 0:
-                message += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
+            # Build message with status and source badges
+            message = f"**{chart['title']}** — Key of {display_key}"
 
-            await interaction.followup.send(message, file=file)
+            # Add source badge
+            if source == 'ai_generated':
+                message += "\n⚠️ AI-Generated — chords may not be accurate"
+            elif source == 'ultimate_guitar':
+                message += "\n🎸 Source: Ultimate Guitar"
+            elif source == 'user_created':
+                message += "\n📝 User Created"
+
+            # Add draft warning if applicable
+            if status == 'draft':
+                message += " **(DRAFT)**"
+
+            # Add rate limit info
+            if self.rate_limiter and rate_limit_remaining >= 0:
+                message += f"\n({rate_limit_remaining} requests remaining in this 10-minute window)"
+
+            await ctx.respond(message, file=file)
 
         except InvalidTokenError:
-            await interaction.followup.send(
+            await ctx.respond(
                 "**Premium Required**\n\n"
                 "Viewing chord chart PDFs requires premium access.\n"
                 "Use `/jambot-premium-setup` to configure your premium token.",
@@ -646,18 +813,26 @@ class ChartCommands:
             )
         except (APIConnectionError, PremiumAPIError) as e:
             logger.error(f"PDF rendering failed: {e}")
-            await interaction.followup.send(
+            await ctx.respond(
                 "Unable to generate PDF. Please try again later.",
                 ephemeral=True
             )
 
-    async def _handle_list(self, interaction: discord.Interaction):
-        """List all chord charts for this guild."""
-        await interaction.response.defer(thinking=True)
+    async def _handle_list(self, ctx: Union[ChartContext, discord.Interaction]):
+        """List all chord charts for this guild.
 
-        charts = self.db.list_chord_charts(interaction.guild_id)
+        Args:
+            ctx: Chart context (Interaction or Message wrapper)
+        """
+        # Convert raw Interaction to context wrapper if needed
+        if isinstance(ctx, discord.Interaction):
+            ctx = InteractionContext(ctx)
+
+        await ctx.defer(thinking=True)
+
+        charts = self.db.list_chord_charts(ctx.guild_id)
         if not charts:
-            await interaction.followup.send("No chord charts saved yet.")
+            await ctx.respond("No chord charts saved yet.")
             return
 
         lines = []
@@ -671,46 +846,58 @@ class ChartCommands:
         if len(msg) > 1900:
             msg = msg[:1900] + "\n..."
 
-        await interaction.followup.send(msg)
+        await ctx.respond(msg)
 
     async def _handle_transpose(
-        self, interaction: discord.Interaction,
-        song_title: Optional[str], new_key: Optional[str]
+        self,
+        ctx: Union[ChartContext, discord.Interaction],
+        song_title: Optional[str],
+        new_key: Optional[str]
     ):
-        """Add a transposed key variant to an existing chart."""
+        """Add a transposed key variant to an existing chart.
+
+        Args:
+            ctx: Chart context (Interaction or Message wrapper)
+            song_title: Song title to transpose
+            new_key: Target key
+        """
+        # Convert raw Interaction to context wrapper if needed
+        if isinstance(ctx, discord.Interaction):
+            ctx = InteractionContext(ctx)
+
         if not song_title or not new_key:
-            await interaction.response.send_message(
+            await ctx.respond(
                 "Please provide both a song title and a target key.",
                 ephemeral=True,
             )
             return
 
         # Rate limit check (per-user)
-        rate_limit_remaining = -1  # Store remaining count from first check
+        rate_limit_remaining = -1
         if self.rate_limiter:
-            identifier = f"user:{interaction.user.id}:chord"
+            identifier = f"user:{ctx.user_id}:chord"
             allowed, rate_limit_remaining = await self.rate_limiter.check_rate_limit(identifier)
 
             if not allowed:
                 ttl = await self.rate_limiter.get_ttl(identifier)
                 minutes = ttl // 60
                 seconds = ttl % 60
-                await interaction.response.send_message(
+                await ctx.respond(
                     f"⏱️ Rate limit exceeded. You can make 3 chord chart requests per 10 minutes. "
                     f"Please try again in {minutes}m {seconds}s.",
                     ephemeral=True
                 )
                 return
 
-        await interaction.response.defer(thinking=True)
+        await ctx.defer(thinking=True)
 
-        chart = self.db.get_chord_chart(interaction.guild_id, song_title)
+        chart = self.db.get_chord_chart(ctx.guild_id, song_title)
         if not chart:
-            charts = self.db.search_chord_charts(interaction.guild_id, song_title)
+            charts = self.db.search_chord_charts(ctx.guild_id, song_title)
             if charts:
                 chart = charts[0]
             else:
-                await interaction.followup.send(
+                await ctx.respond(
                     f"No chord chart found for \"{song_title}\".", ephemeral=True
                 )
                 return
@@ -718,7 +905,7 @@ class ChartCommands:
         # Check if key already exists
         existing_keys = [k['key'] for k in chart.get('keys', [])]
         if new_key in existing_keys:
-            await interaction.followup.send(
+            await ctx.respond(
                 f"**{chart['title']}** already has a Key of {new_key} variant.",
                 ephemeral=True,
             )
@@ -726,23 +913,24 @@ class ChartCommands:
 
         # Transpose from first key
         if not chart.get('keys'):
-            await interaction.followup.send(
+            await ctx.respond(
                 "Chart has no key data to transpose from.", ephemeral=True
             )
             return
 
         # Convert to API format and transpose via Premium API
         api_chart_data = convert_db_chart_to_api_format(chart)
+        source = chart.get('source', 'user_created')
 
         try:
             transposed_chart = await transpose_chart_via_api(
                 self.db,
-                interaction.guild_id,
+                ctx.guild_id,
                 api_chart_data,
                 new_key
             )
         except InvalidTokenError:
-            await interaction.followup.send(
+            await ctx.respond(
                 "**Premium Required**\n\n"
                 "Transposing charts requires premium access.\n"
                 "Use `/jambot-premium-setup` to configure your premium token.",
@@ -751,7 +939,7 @@ class ChartCommands:
             return
         except (APIConnectionError, PremiumAPIError) as e:
             logger.error(f"Transposition failed: {e}")
-            await interaction.followup.send(
+            await ctx.respond(
                 f"Unable to transpose chart to Key of {new_key}. Please try again later.",
                 ephemeral=True
             )
@@ -764,47 +952,63 @@ class ChartCommands:
         }
         new_keys = chart['keys'] + [transposed_key_entry]
 
-        self.db.update_chord_chart_keys(interaction.guild_id, chart['title'], new_keys)
+        self.db.update_chord_chart_keys(ctx.guild_id, chart['title'], new_keys)
 
         # Render PDF with new key via Premium API
         try:
             pdf_bytes = await render_chart_pdf_via_api(
                 self.db,
-                interaction.guild_id,
+                ctx.guild_id,
                 transposed_chart
             )
             pdf_buf = io.BytesIO(pdf_bytes)
             filename = f"{chart['title'].replace(' ', '_')}_{new_key}.pdf"
             file = discord.File(fp=pdf_buf, filename=filename)
 
-            # Build message with rate limit info if available
+            # Build message with source badge and rate limit info
             message = f"Added Key of {new_key} to **{chart['title']}**."
-            if self.rate_limiter and rate_limit_remaining >= 0:
-                message += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
 
-            await interaction.followup.send(message, file=file)
+            # Add source badge
+            if source == 'ai_generated':
+                message += "\n⚠️ AI-Generated — chords may not be accurate"
+            elif source == 'ultimate_guitar':
+                message += "\n🎸 Source: Ultimate Guitar"
+            elif source == 'user_created':
+                message += "\n📝 User Created"
+
+            # Add rate limit info
+            if self.rate_limiter and rate_limit_remaining >= 0:
+                message += f"\n({rate_limit_remaining} requests remaining in this 10-minute window)"
+
+            await ctx.respond(message, file=file)
 
         except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
             # Transposition saved but PDF rendering failed
             logger.warning(f"PDF rendering failed after transposition: {e}")
             message = f"Added Key of {new_key} to **{chart['title']}**.\n_(PDF preview unavailable)_"
             if self.rate_limiter and rate_limit_remaining >= 0:
-                message += f" ({rate_limit_remaining} requests remaining)"
-            await interaction.followup.send(message)
+                message += f"\n({rate_limit_remaining} requests remaining)"
+            await ctx.respond(message)
 
     async def _handle_generate(
-        self, interaction: discord.Interaction,
+        self,
+        ctx: Union[ChartContext, discord.Interaction],
         song_title: Optional[str],
         key: Optional[str] = None
     ):
         """Generate a chord chart using AI via the Premium API.
 
-        Parses format: "Song Title" or "Song Title by Artist Name"
+        Args:
+            ctx: Chart context (Interaction or Message wrapper)
+            song_title: Song title (format: "Song Title" or "Song Title by Artist Name")
+            key: Optional key for generation
         """
-        guild_id = interaction.guild_id
+        # Convert raw Interaction to context wrapper if needed
+        if isinstance(ctx, discord.Interaction):
+            ctx = InteractionContext(ctx)
 
         if not song_title:
-            await interaction.response.send_message(
+            await ctx.respond(
                 "Please provide a song title.\n"
                 "Example: `/jambot-chart create Mountain Dew key:G`",
                 ephemeral=True
@@ -812,8 +1016,8 @@ class ChartCommands:
             return
 
         # Check if premium is enabled
-        if not self.db.is_premium_enabled(guild_id):
-            await interaction.response.send_message(
+        if not self.db.is_premium_enabled(ctx.guild_id):
+            await ctx.respond(
                 "**Premium Required**\n\n"
                 "AI chord chart generation requires premium access.\n\n"
                 "**Get started with 5 free trial generations!**\n"
@@ -823,7 +1027,7 @@ class ChartCommands:
             )
             return
 
-        await interaction.response.defer(thinking=True)
+        await ctx.defer(thinking=True)
 
         # Parse artist from "by Artist" pattern
         artist = None
@@ -833,53 +1037,61 @@ class ChartCommands:
             artist = match.group(2).strip()
 
         # Check if chart already exists with fuzzy search
-        existing_chart = self.db.fuzzy_search_chord_chart(guild_id, song_title)
+        existing_chart = self.db.fuzzy_search_chord_chart(ctx.guild_id, song_title)
 
         if existing_chart:
             status = existing_chart.get('status', 'approved')
+            source = existing_chart.get('source', 'user_created')
+
             if status == 'approved':
                 # Return existing chart as PDF via Premium API
                 api_chart_data = convert_db_chart_to_api_format(existing_chart)
                 try:
                     pdf_bytes = await render_chart_pdf_via_api(
                         self.db,
-                        guild_id,
+                        ctx.guild_id,
                         api_chart_data
                     )
                     pdf_buf = io.BytesIO(pdf_bytes)
                     filename = f"{existing_chart['title'].replace(' ', '_')}.pdf"
                     file = discord.File(fp=pdf_buf, filename=filename)
 
-                    await interaction.followup.send(
-                        f"Found existing chart for **{existing_chart['title']}**:",
-                        file=file
-                    )
+                    # Build message with source badge
+                    message = f"Found existing chart for **{existing_chart['title']}**:"
+                    if source == 'ai_generated':
+                        message += "\n⚠️ AI-Generated — chords may not be accurate"
+                    elif source == 'ultimate_guitar':
+                        message += "\n🎸 Source: Ultimate Guitar"
+                    elif source == 'user_created':
+                        message += "\n📝 User Created"
+
+                    await ctx.respond(message, file=file)
                 except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
                     logger.warning(f"PDF rendering failed for existing chart: {e}")
-                    await interaction.followup.send(
+                    await ctx.respond(
                         f"Found existing chart for **{existing_chart['title']}** "
                         f"(Key of {api_chart_data['key']}).\n"
                         f"_(PDF preview unavailable - please try again later)_"
                     )
                 return
             else:
-                await interaction.followup.send(
+                await ctx.respond(
                     f"Chart for **{existing_chart['title']}** exists but is pending approval (status: {status})."
                 )
                 return
 
         # Get premium token
-        premium_config = self.db.get_premium_config(guild_id)
+        premium_config = self.db.get_premium_config(ctx.guild_id)
         token = premium_config.get('premium_api_token')
 
         # Generate via Premium API
         try:
-            logger.info(f"Generating chord chart via Premium API: title='{song_title}', artist='{artist}', guild={guild_id}")
+            logger.info(f"Generating chord chart via Premium API: title='{song_title}', artist='{artist}', guild={ctx.guild_id}")
 
             async with PremiumClient() as client:
                 result = await client.generate_chart(
                     token=token,
-                    guild_id=guild_id,
+                    guild_id=ctx.guild_id,
                     title=song_title,
                     artist=artist,
                     key=key
@@ -887,7 +1099,7 @@ class ChartCommands:
 
             if not result.success:
                 if result.error == "insufficient_credits":
-                    await interaction.followup.send(
+                    await ctx.respond(
                         "**No Credits Remaining**\n\n"
                         f"You have {result.credits_remaining} credits left.\n\n"
                         "Use `/jambot-buy-credits` to purchase more credits.",
@@ -895,7 +1107,7 @@ class ChartCommands:
                     )
                     return
                 else:
-                    await interaction.followup.send(
+                    await ctx.respond(
                         f"Chart generation failed: {result.error}",
                         ephemeral=True
                     )
@@ -936,12 +1148,12 @@ class ChartCommands:
 
             # Save to database as draft
             chart_id = self.db.create_chord_chart(
-                guild_id=guild_id,
+                guild_id=ctx.guild_id,
                 title=chart_title,
                 chart_title=None,
                 lyrics=lyrics,
                 keys=keys,
-                created_by=interaction.user.id,
+                created_by=ctx.user_id,
                 source='ai_generated',
                 status='draft',
                 alternate_titles=None,
@@ -969,15 +1181,16 @@ class ChartCommands:
             try:
                 pdf_bytes = await render_chart_pdf_via_api(
                     self.db,
-                    guild_id,
+                    ctx.guild_id,
                     api_chart_data
                 )
                 pdf_buf = io.BytesIO(pdf_bytes)
                 filename = f"{chart_title.replace(' ', '_')}.pdf"
                 file = discord.File(fp=pdf_buf, filename=filename)
 
-                await interaction.followup.send(
+                await ctx.respond(
                     f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**\n"
+                    f"⚠️ AI-Generated — chords may not be accurate\n"
                     f"{credits_msg}\n\n"
                     f"_Use `/jambot-chart approve {chart_title}` to finalize._",
                     file=file
@@ -985,16 +1198,17 @@ class ChartCommands:
             except (APIConnectionError, PremiumAPIError) as e:
                 # Chart was generated and saved but PDF rendering failed
                 logger.warning(f"PDF rendering failed after generation: {e}")
-                await interaction.followup.send(
+                await ctx.respond(
                     f"Generated chord chart for **{chart_title}** (Key of {chart_key}) - saved as **DRAFT**\n"
+                    f"⚠️ AI-Generated — chords may not be accurate\n"
                     f"{credits_msg}\n"
                     f"_(PDF preview unavailable - use `/jambot-chart view {chart_title}` later)_\n\n"
                     f"_Use `/jambot-chart approve {chart_title}` to finalize._"
                 )
 
         except InvalidTokenError:
-            logger.error(f"Invalid premium token for guild {guild_id}")
-            await interaction.followup.send(
+            logger.error(f"Invalid premium token for guild {ctx.guild_id}")
+            await ctx.respond(
                 "**Invalid Premium Token**\n\n"
                 "Your premium token appears to be invalid or expired.\n"
                 "Please run `/jambot-premium-setup` again with a valid token.",
@@ -1002,49 +1216,68 @@ class ChartCommands:
             )
         except APIConnectionError as e:
             logger.error(f"Premium API connection error: {e}")
-            await interaction.followup.send(
+            await ctx.respond(
                 "**Service Unavailable**\n\n"
                 "Unable to connect to the premium API. Please try again later.",
                 ephemeral=True
             )
         except Exception as e:
             logger.error(f"Chart generation failed: {e}", exc_info=True)
-            await interaction.followup.send(
+            await ctx.respond(
                 "Chart generation failed. Please try again later.",
                 ephemeral=True
             )
 
     async def _handle_delete(
-        self, interaction: discord.Interaction,
+        self,
+        ctx: Union[ChartContext, discord.Interaction],
         song_title: Optional[str]
     ):
-        """Delete a chord chart (admin only)."""
+        """Delete a chord chart (admin only).
+
+        Args:
+            ctx: Chart context (Interaction or Message wrapper)
+            song_title: Song title to delete
+        """
+        # Convert raw Interaction to context wrapper if needed
+        if isinstance(ctx, discord.Interaction):
+            ctx = InteractionContext(ctx)
+
         if not song_title:
-            await interaction.response.send_message(
+            await ctx.respond(
                 "Please provide a song title to delete.",
                 ephemeral=True
             )
             return
 
-        # Check for admin permissions
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
+        # Check for admin permissions (Note: this assumes ctx wraps either Interaction or Message)
+        # We need to get the raw object to check permissions
+        if isinstance(ctx, InteractionContext):
+            user_perms = ctx._interaction.user.guild_permissions
+        elif isinstance(ctx, MessageContext):
+            user_perms = ctx._message.author.guild_permissions
+        else:
+            # Fallback: assume no admin perms
+            user_perms = None
+
+        if not user_perms or not user_perms.administrator:
+            await ctx.respond(
                 "Only administrators can delete chord charts.",
                 ephemeral=True
             )
             return
 
-        await interaction.response.defer(thinking=True)
+        await ctx.defer(thinking=True)
 
         # Try to find the chart (exact or fuzzy match)
-        chart = self.db.get_chord_chart(interaction.guild_id, song_title)
+        chart = self.db.get_chord_chart(ctx.guild_id, song_title)
         if not chart:
-            charts = self.db.search_chord_charts(interaction.guild_id, song_title)
+            charts = self.db.search_chord_charts(ctx.guild_id, song_title)
             if charts:
                 chart = charts[0]
 
         if not chart:
-            await interaction.followup.send(
+            await ctx.respond(
                 f"No chord chart found matching \"{song_title}\".",
                 ephemeral=True
             )
@@ -1052,20 +1285,18 @@ class ChartCommands:
 
         # Delete the chart
         try:
-            deleted = self.db.delete_chord_chart(interaction.guild_id, chart['title'])
+            deleted = self.db.delete_chord_chart(ctx.guild_id, chart['title'])
 
             if deleted:
-                await interaction.followup.send(
-                    f"Deleted chord chart **{chart['title']}**."
-                )
+                await ctx.respond(f"Deleted chord chart **{chart['title']}**.")
             else:
-                await interaction.followup.send(
+                await ctx.respond(
                     f"Could not find chart \"{chart['title']}\" to delete.",
                     ephemeral=True
                 )
         except Exception as e:
             logger.error(f"Error deleting chart '{chart['title']}': {e}", exc_info=True)
-            await interaction.followup.send(
+            await ctx.respond(
                 f"Unable to delete **{chart['title']}**. Please try again or contact support.",
                 ephemeral=True
             )
@@ -1134,82 +1365,9 @@ class ChartCommands:
             )
             return
 
-        # Rate limit check
-        rate_limit_remaining = -1
-        if self.rate_limiter:
-            identifier = f"user:{message.author.id}:chord"
-            allowed, rate_limit_remaining = await self.rate_limiter.check_rate_limit(identifier)
-            if not allowed:
-                ttl = await self.rate_limiter.get_ttl(identifier)
-                minutes = ttl // 60
-                seconds = ttl % 60
-                await message.reply(
-                    f"⏱️ Rate limit exceeded. You can make 3 chord chart requests per 10 minutes. "
-                    f"Please try again in {minutes}m {seconds}s."
-                )
-                return
-
-        # Look up chart
-        chart = self.db.get_chord_chart(guild_id, intent.song_title)
-        if not chart:
-            charts = self.db.search_chord_charts(guild_id, intent.song_title)
-            if charts:
-                chart = charts[0]
-
-        if not chart:
-            # Offer to create
-            if self.db.is_premium_enabled(guild_id):
-                view = CreateChartView(self.db, prefill_title=intent.song_title)
-                await message.reply(
-                    f"I don't have a chord chart for \"{intent.song_title}\" yet. "
-                    f"Click below to create one:",
-                    view=view,
-                )
-            else:
-                await message.reply(
-                    f"I don't have a chord chart for \"{intent.song_title}\" yet.\n\n"
-                    f"Creating charts requires premium access. "
-                    f"Use `/jambot-premium-setup` to get started with 5 free trial generations!"
-                )
-            return
-
-        # Render chart
-        api_chart_data = convert_db_chart_to_api_format(chart)
-        display_key = api_chart_data['key']
-
-        # Transpose if requested
-        if intent.key and intent.key.upper() != display_key.upper():
-            try:
-                api_chart_data = await transpose_chart_via_api(
-                    self.db, guild_id, api_chart_data, intent.key
-                )
-                display_key = intent.key
-            except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
-                logger.warning(f"Transposition failed: {e}")
-
-        # Render PDF
-        try:
-            pdf_bytes = await render_chart_pdf_via_api(self.db, guild_id, api_chart_data)
-            pdf_buf = io.BytesIO(pdf_bytes)
-            filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
-            file = discord.File(fp=pdf_buf, filename=filename)
-
-            reply_msg = f"**{chart['title']}** — Key of {display_key}"
-            if self.rate_limiter and rate_limit_remaining >= 0:
-                reply_msg += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
-
-            await message.reply(reply_msg, file=file)
-        except InvalidTokenError:
-            await message.reply(
-                f"Found chart for **{chart['title']}** (Key of {display_key}).\n"
-                f"PDF generation requires premium access. Use `/jambot-premium-setup` to configure your token."
-            )
-        except (APIConnectionError, PremiumAPIError) as e:
-            logger.error(f"PDF rendering failed: {e}")
-            await message.reply(
-                f"Found chart for **{chart['title']}** (Key of {display_key}).\n"
-                f"_(PDF preview unavailable - please try again later)_"
-            )
+        # Wrap message in context and delegate to unified handler
+        ctx = MessageContext(message)
+        await self._handle_view(ctx, intent.song_title, intent.key)
 
     async def _handle_create_intent(
         self, message: discord.Message,
@@ -1243,29 +1401,9 @@ class ChartCommands:
             )
             return
 
-        if not self.db.is_premium_enabled(guild_id):
-            await message.reply(
-                "**Premium Required**\n\n"
-                "AI chord chart generation requires premium access.\n\n"
-                "**Get started with 5 free trial generations!**\n"
-                "Use `/jambot-premium-setup` to configure your premium token.\n\n"
-                "_Visit https://premium.jambot.app to get a token._"
-            )
-            return
-
-        # Use the slash command handler for generation
-        await message.reply(
-            f"Generating chord chart for **{intent.song_title}**"
-            + (f" by {intent.artist}" if intent.artist else "")
-            + "... This may take a moment."
-        )
-        # Note: This would require refactoring _handle_generate to be callable from here
-        # For now, direct users to use the slash command
-        await message.reply(
-            f"Use `/jambot-chart generate {intent.song_title}`"
-            + (f" key:{intent.key}" if intent.key else "")
-            + " to generate this chart."
-        )
+        # Wrap message in context and delegate to unified handler
+        ctx = MessageContext(message)
+        await self._handle_generate(ctx, intent.song_title, intent.key)
 
     async def _handle_transpose_intent(
         self, message: discord.Message,
@@ -1280,28 +1418,15 @@ class ChartCommands:
             )
             return
 
-        await message.reply(
-            f"Use `/jambot-chart transpose {intent.song_title} new_key:{intent.target_key}` "
-            f"to transpose this chart."
-        )
+        # Wrap message in context and delegate to unified handler
+        ctx = MessageContext(message)
+        await self._handle_transpose(ctx, intent.song_title, intent.target_key)
 
     async def _handle_list_intent(self, message: discord.Message, guild_id: int):
         """Handle LIST intent - user wants to see all charts."""
-        charts = self.db.list_chord_charts(guild_id)
-        if not charts:
-            await message.reply("No chord charts saved yet.")
-            return
-
-        lines = []
-        for chart in charts[:20]:  # Limit to 20 to avoid message length issues
-            keys_str = ", ".join(k['key'] for k in chart.get('keys', []))
-            lines.append(f"- **{chart['title']}** (Key of {keys_str})")
-
-        msg = "**Available Chord Charts:**\n" + "\n".join(lines)
-        if len(charts) > 20:
-            msg += f"\n\n_... and {len(charts) - 20} more. Use `/jambot-chart-list` to see all._"
-
-        await message.reply(msg)
+        # Wrap message in context and delegate to unified handler
+        ctx = MessageContext(message)
+        await self._handle_list(ctx)
 
     async def _handle_search_intent(
         self, message: discord.Message,
@@ -1359,19 +1484,15 @@ class ChartCommands:
         guild_id: int
     ):
         """Handle DELETE intent - user wants to delete a chart."""
-        if not message.author.guild_permissions.administrator:
-            await message.reply("Only administrators can delete chord charts.")
-            return
-
         if not intent.song_title:
             await message.reply(
                 "Please specify which chart to delete. Try: `delete [song name]`"
             )
             return
 
-        await message.reply(
-            f"Use `/jambot-chart delete {intent.song_title}` to delete this chart."
-        )
+        # Wrap message in context and delegate to unified handler
+        ctx = MessageContext(message)
+        await self._handle_delete(ctx, intent.song_title)
 
     async def _handle_unknown_intent(self, message: discord.Message):
         """Handle UNKNOWN intent - couldn't determine what user wants."""
@@ -1475,58 +1596,9 @@ class ChartCommands:
                 chart = charts[0]
 
         if chart:
-            # Convert to Premium API format
-            api_chart_data = convert_db_chart_to_api_format(chart)
-            display_key = api_chart_data['key']
-
-            # Transpose if needed
-            if requested_key and requested_key.upper() != display_key.upper():
-                try:
-                    api_chart_data = await transpose_chart_via_api(
-                        self.db,
-                        guild_id,
-                        api_chart_data,
-                        requested_key
-                    )
-                    display_key = requested_key
-                except (InvalidTokenError, APIConnectionError, PremiumAPIError) as e:
-                    logger.warning(f"Transposition via API failed in mention handler: {e}")
-                    await message.reply(
-                        f"Unable to transpose chart to Key of {requested_key}. "
-                        f"Showing original key ({display_key}) instead."
-                    )
-                    # Continue with original key
-
-            # Render PDF via Premium API
-            try:
-                pdf_bytes = await render_chart_pdf_via_api(
-                    self.db,
-                    guild_id,
-                    api_chart_data
-                )
-                pdf_buf = io.BytesIO(pdf_bytes)
-                filename = f"{chart['title'].replace(' ', '_')}_{display_key}.pdf"
-                file = discord.File(fp=pdf_buf, filename=filename)
-
-                # Build message with rate limit info if available
-                reply_msg = f"**{chart['title']}** — Key of {display_key}"
-                if self.rate_limiter and rate_limit_remaining >= 0:
-                    reply_msg += f" ({rate_limit_remaining} requests remaining in this 10-minute window)"
-
-                await message.reply(reply_msg, file=file)
-
-            except InvalidTokenError:
-                await message.reply(
-                    f"Found chart for **{chart['title']}** (Key of {display_key}).\n"
-                    f"PDF generation requires premium access. "
-                    f"Use `/jambot-premium-setup` to configure your token."
-                )
-            except (APIConnectionError, PremiumAPIError) as e:
-                logger.error(f"PDF rendering failed in mention handler: {e}")
-                await message.reply(
-                    f"Found chart for **{chart['title']}** (Key of {display_key}).\n"
-                    f"_(PDF preview unavailable - please try again later)_"
-                )
+            # Delegate to unified handler
+            ctx = MessageContext(message)
+            await self._handle_view(ctx, song_title, requested_key)
         else:
             # Check premium status before offering to create
             if self.db.is_premium_enabled(guild_id):
