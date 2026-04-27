@@ -9,8 +9,9 @@ class SetlistParser:
 
     # Default regex patterns for setlist detection
     # Note: Handles both straight apostrophe (') and curly quote (') from Discord
-    # The (?:\s*\([^)]*\))? allows optional parenthetical comments between "setlist" and "for"
-    DEFAULT_INTRO_PATTERN = r"here['\u2019]s\s+the\s+(?:upcoming\s+)?setlist(?:\s*\([^)]*\))?\s+for\s+the\s+(.+?)\s+jam\s+on\s+(.+?)\."
+    # set\s*list matches both "setlist" and "set list" (two words).
+    # (?:\s*\([^)]*\))? allows optional parenthetical comments between "set list" and "for".
+    DEFAULT_INTRO_PATTERN = r"here['\u2019]s\s+the\s+(?:upcoming\s+)?set\s*list(?:\s*\([^)]*\))?\s+for\s+the\s+(.+?)\s+jam\s+on\s+(.+?)\."
 
     # Default song line pattern - matches numbered songs with optional key in parentheses
     # Examples: "1. Will the Circle (G)" or "1. Joy to the World"
@@ -80,8 +81,27 @@ class SetlistParser:
             logger.info(f"✅ Setlist detected: {time} jam on {date}")
             return True
 
-        logger.debug(f"❌ Not a setlist - pattern didn't match")
-        logger.debug(f"Pattern: {self._intro_pattern.pattern}")
+        # Pattern didn't match. If the message looks setlist-ish (keyword OR
+        # numbered list), emit a near-miss breadcrumb at INFO so production
+        # logs surface the cause. Pure non-setlist chatter stays at DEBUG.
+        has_keyword = any(kw in content.lower() for kw in self.SETLIST_KEYWORDS)
+        has_time = bool(re.search(r'\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:am|pm)\b', content, re.IGNORECASE))
+        has_date = bool(re.search(
+            r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|'
+            r'\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\b',
+            content, re.IGNORECASE
+        ))
+        has_numbered_list = bool(self.NUMBERED_LIST_PATTERN.search(content))
+
+        if has_keyword or has_numbered_list:
+            logger.info(
+                f"❌ Setlist intro pattern miss (near-miss): "
+                f"keyword={has_keyword} time={has_time} date={has_date} "
+                f"numbered_list={has_numbered_list} | pattern={self._intro_pattern.pattern}"
+            )
+        else:
+            logger.debug(f"❌ Not a setlist - pattern didn't match")
+            logger.debug(f"Pattern: {self._intro_pattern.pattern}")
         return False
 
     def parse_setlist(self, content: str) -> Optional[Dict]:
