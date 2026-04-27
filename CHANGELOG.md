@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions workflow for automatic documentation deployment
 
 ### Fixed
+- Health check stayed stuck at 503 indefinitely after the first WebSocket reconnect. discord.py fires `on_resumed` (not `on_connect`) when resuming a session, so health state was never re-marked as connected. Added `on_resumed` handler and a defensive `set_connected()` in `on_ready`.
 - Fix setlist detection failing when jam leader adds parenthetical comments between "setlist" and "for" (e.g., "Here's the setlist (as requested by Kristy) for the 6:30 jam...")
 - Setlist intro pattern now matches both "setlist" and "set list" (two words). Previously, jam leaders writing "set list" had their messages silently ignored despite the bot logging the detection attempt.
 - Added near-miss breadcrumb logging in `is_setlist_message()`: when the intro pattern fails on a message that contains a setlist keyword or numbered list, log which signals (keyword/time/date/numbered_list) were present at INFO level so future pattern drift surfaces immediately instead of silently failing.

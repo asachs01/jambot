@@ -204,6 +204,8 @@ class JamBot(commands.Bot):
 
     async def on_ready(self):
         """Called when the bot successfully connects to Discord."""
+        from src.health_state import health_state
+        health_state.set_connected()
         logger.info(f"Bot logged in as {self.user} (ID: {self.user.id})")
 
         # Restore active workflows from database
@@ -236,6 +238,16 @@ class JamBot(commands.Bot):
         health_state.set_disconnected()
 
         logger.warning("Disconnected from Discord")
+
+    async def on_resumed(self):
+        """Called when the bot resumes its WebSocket session after a transient
+        disconnect. discord.py fires this instead of on_connect for session
+        resumes, so we must mark health as connected here too — otherwise the
+        bot stays falsely marked unhealthy forever after the first reconnect.
+        """
+        from src.health_state import health_state
+        health_state.set_connected()
+        logger.info("Discord session resumed")
 
     async def on_error(self, event, *args, **kwargs):
         """Called when an error occurs."""
