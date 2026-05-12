@@ -418,7 +418,7 @@ class SpotifyClient:
                 'id': item['id'],
                 'name': item['name'],
                 'artist': ', '.join([artist['name'] for artist in item['artists']]),
-                'album': item['album']['name'],
+                'album': (item.get('album') or {}).get('name') or 'Unknown Album',
                 'url': item['external_urls']['spotify'],
                 'uri': item['uri'],
             }
