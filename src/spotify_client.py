@@ -434,6 +434,9 @@ class SpotifyClient:
         Returns:
             Track dictionary or None if invalid.
         """
+        if self.sp is None:
+            logger.error("Spotify client not authenticated; cannot get track from URL")
+            return None
         try:
             # Extract track ID from URL
             if '/track/' in url:
@@ -463,6 +466,8 @@ class SpotifyClient:
         Raises:
             Exception: If playlist creation fails.
         """
+        if self.sp is None:
+            raise Exception("Spotify client not authenticated. Use /jambot-spotify-setup to reconnect.")
         try:
             playlist = self._retry_api_call(
                 self.sp.user_playlist_create,
@@ -494,6 +499,8 @@ class SpotifyClient:
         Raises:
             Exception: If adding tracks fails.
         """
+        if self.sp is None:
+            raise Exception("Spotify client not authenticated. Use /jambot-spotify-setup to reconnect.")
         try:
             # Spotify allows adding up to 100 tracks at once
             batch_size = 100
