@@ -11,7 +11,21 @@ class SetlistParser:
     # Note: Handles both straight apostrophe (') and curly quote (') from Discord
     # set\s*list matches both "setlist" and "set list" (two words).
     # (?:\s*\([^)]*\))? allows optional parenthetical comments between "set list" and "for".
-    DEFAULT_INTRO_PATTERN = r"here['\u2019]s\s+the\s+(?:upcoming\s+)?set\s*list(?:\s*\([^)]*\))?\s+for\s+the\s+(.+?)\s+jam\s+on\s+(.+?)\."
+    #
+    # Date group is deliberately NOT "everything up to the next period" (that swallowed
+    # trailing chatter like ", weather permitting, at Sarah's place tonight." into the
+    # date, producing multi-line Spotify playlist titles). Instead it matches a bounded
+    # set of date-shaped tokens: M/D, M/D/YY(YY), "Month D[st|nd|rd|th][, YYYY]", a bare
+    # weekday name, or "today"/"tonight"/"tomorrow".
+    DEFAULT_INTRO_PATTERN = (
+        r"here['\u2019]s\s+the\s+(?:upcoming\s+)?set\s*list(?:\s*\([^)]*\))?\s+for\s+the\s+(.+?)\s+jam\s+on\s+"
+        r"("
+        r"\d{1,2}/\d{1,2}(?:/\d{2,4})?"
+        r"|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?"
+        r"|(?:mon|tues?|wed(?:nes)?|thur?s?|fri|sat(?:ur)?|sun)[a-z]*"
+        r"|today|tonight|tomorrow"
+        r")"
+    )
 
     # Default song line pattern - matches numbered songs with optional key in parentheses
     # Examples: "1. Will the Circle (G)" or "1. Joy to the World"

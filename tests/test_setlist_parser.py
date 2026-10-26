@@ -121,6 +121,28 @@ class TestSetlistParserParsing:
             assert result is not None
             assert len(result['songs']) == 1
 
+    def test_date_does_not_swallow_trailing_chatter(self):
+        """Regression: date group must not capture text past the date token.
+
+        Previously the intro pattern used `(.+?)\\.` for the date group,
+        which greedily matched up to the FIRST period anywhere in the
+        message. Any trailing commentary after the date (before the real
+        sentence-ending period) got absorbed into `date`, producing
+        multi-line/oversized Spotify playlist titles downstream.
+        """
+        parser = SetlistParser()
+
+        message = (
+            "Here's the setlist for the TN jam on 9/9, weather permitting, "
+            "at Sarah's place tonight.\n1. Song One"
+        )
+        result = parser.parse_setlist(message)
+
+        assert result is not None
+        assert result['date'] == '9/9'
+        assert 'weather permitting' not in result['date']
+        assert 'Sarah' not in result['date']
+
 
 class TestSetlistParserCustomPatterns:
     """Test custom pattern support."""
