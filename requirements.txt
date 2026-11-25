@@ -29,7 +29,7 @@ Flask==3.0.0
 gunicorn==21.2.0
 
 # HTTP Client for Premium API
-aiohttp==3.9.1
+aiohttp==3.14.4
 httpx>=0.25.0  # used by src/intent_parser.py (also pulled in by openai)
 
 # Password Hashing for Premium Token Storage
