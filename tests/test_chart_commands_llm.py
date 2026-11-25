@@ -11,6 +11,8 @@ from src.database import Database
 def mock_db():
     """Mock database instance."""
     db = Mock(spec=Database)
+    db.is_premium_enabled.return_value = True
+    db.get_premium_config.return_value = {'premium_api_token': 'test-token'}
     return db
 
 
@@ -135,7 +137,7 @@ class TestChartCommandsGenerate:
 
         mock_interaction.response.send_message.assert_called_once()
         call_args = mock_interaction.response.send_message.call_args
-        assert "provide a song title" in call_args[0][0].lower()
+        assert "provide a song title" in call_args.kwargs["content"].lower()
 
     @pytest.mark.asyncio
     async def test_generate_with_existing_approved_chart(self, mock_db, mock_bot, mock_interaction, sample_chart_data, mock_premium_client):
@@ -156,7 +158,7 @@ class TestChartCommandsGenerate:
 
             # Should find existing chart
             call_args = mock_interaction.followup.send.call_args
-            assert "found existing chart" in call_args[0][0].lower() or "mountain dew" in call_args[0][0].lower()
+            assert "found existing chart" in call_args.kwargs["content"].lower() or "mountain dew" in call_args.kwargs["content"].lower()
 
     @pytest.mark.asyncio
     async def test_generate_with_existing_draft_chart(self, mock_db, mock_bot, mock_interaction, sample_chart_data):
@@ -170,7 +172,7 @@ class TestChartCommandsGenerate:
         mock_interaction.response.defer.assert_called_once()
         call_args = mock_interaction.followup.send.call_args
         # Draft charts show pending approval message
-        assert "pending approval" in call_args[0][0].lower() or "draft" in call_args[0][0].lower()
+        assert "pending approval" in call_args.kwargs["content"].lower() or "draft" in call_args.kwargs["content"].lower()
 
     @pytest.mark.asyncio
     async def test_generate_creates_new_chart_via_premium_api(self, mock_db, mock_bot, mock_interaction):
@@ -209,14 +211,14 @@ class TestChartCommandsGenerate:
     async def test_generate_handles_no_premium_token(self, mock_db, mock_bot, mock_interaction):
         """Test generate command handles missing premium token."""
         commands = ChartCommands(mock_bot, mock_db)
-        mock_db.fuzzy_search_chord_chart.return_value = None
-        mock_db.get_guild_premium_token = Mock(return_value=None)
+        mock_db.is_premium_enabled.return_value = False
 
         await commands._handle_generate(mock_interaction, "Test Song")
 
-        mock_interaction.response.defer.assert_called_once()
-        call_args = mock_interaction.followup.send.call_args
-        assert "premium" in call_args[0][0].lower() or "token" in call_args[0][0].lower()
+        # Not deferred: the premium-required notice is sent immediately
+        mock_interaction.response.defer.assert_not_called()
+        call_args = mock_interaction.response.send_message.call_args
+        assert "premium" in call_args.kwargs["content"].lower()
 
     @pytest.mark.asyncio
     async def test_generate_handles_api_exception(self, mock_db, mock_bot, mock_interaction, mock_premium_client):

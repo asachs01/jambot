@@ -154,6 +154,12 @@ async def parse_mention_intent(
 
             content = data["choices"][0]["message"]["content"].strip()
 
+            # Some models wrap JSON in markdown code fences; strip them
+            if content.startswith("```"):
+                content = content.strip("`").strip()
+                if content.lower().startswith("json"):
+                    content = content[4:].strip()
+
             # Parse JSON response
             result_data = json.loads(content)
 

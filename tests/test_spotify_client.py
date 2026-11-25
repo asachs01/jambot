@@ -1,6 +1,6 @@
 """Tests for the SpotifyClient class."""
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 import time
 
 
@@ -277,6 +277,7 @@ class TestSpotifyUrl:
         from src.spotify_client import SpotifyClient
 
         client = SpotifyClient.__new__(SpotifyClient)
+        client.sp = Mock()
 
         result = client.get_track_from_url('https://open.spotify.com/playlist/playlist123')
 
