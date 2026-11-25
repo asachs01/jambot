@@ -1,4 +1,5 @@
 """Tests for LLM-powered intent parser."""
+import json
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -14,6 +15,12 @@ from src.intent_parser import (
 class TestIntentParser:
     """Test cases for intent parsing functionality."""
 
+    @pytest.fixture(autouse=True)
+    def _api_key(self):
+        """Provide a dummy API key so parsing is enabled (HTTP is mocked per test)."""
+        with patch('src.intent_parser.Config.OPENROUTER_API_KEY', 'test-key'):
+            yield
+
     @pytest.fixture
     def mock_openrouter_response(self):
         """Fixture to create mock OpenRouter API responses."""
@@ -21,7 +28,7 @@ class TestIntentParser:
             return {
                 "choices": [{
                     "message": {
-                        "content": str(intent_data).replace("'", '"')
+                        "content": json.dumps(intent_data)
                     }
                 }]
             }
@@ -362,3 +369,21 @@ class TestIntentParser:
         with patch('src.intent_parser.Config.OPENROUTER_API_KEY', None):
             result = await parse_mention_intent("show me charts")
             assert result is None
+
+    @pytest.mark.asyncio
+    async def test_markdown_fenced_json_is_parsed(self):
+        """Models sometimes wrap JSON in ```json fences; these should still parse."""
+        fenced = '```json\n{"intent": "list", "song_title": null, "artist": null, "key": null, "target_key": null, "confidence": 0.9}\n```'
+        mock_response = {"choices": [{"message": {"content": fenced}}]}
+
+        with patch('httpx.AsyncClient') as mock_client:
+            mock_post = AsyncMock(return_value=MagicMock(
+                status_code=200,
+                json=lambda: mock_response
+            ))
+            mock_client.return_value.__aenter__.return_value.post = mock_post
+
+            result = await parse_mention_intent("what charts do you have?")
+
+            assert result is not None
+            assert result.intent == Intent.LIST
