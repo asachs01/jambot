@@ -2,7 +2,7 @@
 discord.py==2.3.2
 
 # Spotify Integration
-spotipy==2.23.0
+spotipy==2.25.2
 
 # Environment Variables
 python-dotenv==1.0.0
