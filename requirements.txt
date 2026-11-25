@@ -5,7 +5,7 @@ discord.py==2.3.2
 spotipy==2.25.2
 
 # Environment Variables
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 
 # Database
 psycopg2-binary==2.9.9
